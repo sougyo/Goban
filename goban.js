@@ -1,7 +1,3 @@
-onload = function() {
-  draw();
-};
-
 var StoneType = {
   NONE: 0,
   BLACK: 1,
@@ -9,8 +5,11 @@ var StoneType = {
   reverse: function(stone) {
     if (stone == this.BLACK) return this.WHITE;
     if (stone == this.WHITE) return this.BLACK;
-    return this.NONE;
+    return;
   },
+  isStone: function(stone) {
+    return stone == this.BLACK || stone == this.WHITE;
+  }
 };
 
 var Board = function(size) {
@@ -32,7 +31,7 @@ var Board = function(size) {
     return this.board[x][y];
   }
 
-  this.overwrite = function(other) {
+  this.update = function(other) {
     if (this.size != other.size)
       return;
     for (var x = 0; x < this.size; x++) {
@@ -40,6 +39,16 @@ var Board = function(size) {
         this.board[x][y] = other.get(x, y);
       }
     }
+  }
+
+  this.count = function(stone) {
+    var c = 0;
+    for (var x = 0; x < this.size; x++) {
+      for (var y = 0; y < this.size; y++) {
+        if (this.board[x][y] == stone) c++;
+      }
+    }
+    return c;
   }
 
   this.clear = function() {
@@ -57,32 +66,37 @@ var Board = function(size) {
   this.clear();
 }
 
-var GoDrawer = function(goban, hgrid) {
-  this.canvas = document.getElementById('canvassample');
+var GoDrawer = function(goban, canvasid) {
+  this.canvas = document.getElementById(canvasid);
   if ( ! this.canvas || ! this.canvas.getContext ) {
-    alert("hoge");
-    return false;
+    return;
   }
-
   this.ctx = this.canvas.getContext('2d');
   this.goban = goban;
-  this.hgrid = hgrid;
-  this.xOffset = 0;
-  this.yOffset = 0;
+
+  this.resize = function() {
+    this.width = $(this.canvas).width();
+    this.height = $(this.canvas).height();
+    this.hgrid = Math.floor(Math.min(this.width, this.height) / (2 * (1 + this.goban.size)));
+    this.grid = this.hgrid * 2;
+    var boardSize = this.hgrid * 2 * (1 + this.goban.size);
+    this.xOffset = (this.width - boardSize) / 2;
+    this.yOffset = (this.height - boardSize) / 2;
+    this.ctx.canvas.width = this.width;
+    this.ctx.canvas.height = this.height;
+    this.draw();
+  }
 
   this.drawBackground = function() {
-    var size = this.goban.size;
-    var grid = this.hgrid * 2;
-    var ctx = this.ctx;
-    ctx.fillStyle = 'rgb(222, 184, 135)';
-    ctx.fillRect(0, 0, (size + 1) * grid, (size + 1) * grid);
+    this.ctx.fillStyle = 'rgb(222, 184, 135)';
+    this.ctx.fillRect(0, 0, this.width, this.height);
   }
 
   this.drawBoard = function() {
     var size = this.goban.size;
-    var grid = this.hgrid * 2;
+    var grid = this.grid;
     var ctx = this.ctx;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1;
     for (var i = 0; i < size; i++) {
       ctx.beginPath();
       ctx.moveTo(grid, (i + 1) * grid);
@@ -93,6 +107,40 @@ var GoDrawer = function(goban, hgrid) {
       ctx.lineTo((i + 1) * grid, grid * size);
       ctx.stroke();
     }
+  }
+
+  this.drawPoint = function() {
+    var size = this.goban.size;
+    var grid = this.grid;
+    var ctx = this.ctx;
+    var pointSize = this.hgrid / 4;
+
+    var lpos = 3;
+    var rpos = size - lpos - 1;
+    var hpos = Math.floor(size / 2);
+
+    var points = [];
+    if (size > 10) {
+      points.push([lpos, lpos]);
+      points.push([rpos, lpos]);
+      points.push([lpos, rpos]);
+      points.push([rpos, rpos]);
+    }
+    if ((size % 2 == 1) && size >= 19) {
+      points.push([hpos, hpos]);
+      points.push([lpos, hpos]);
+      points.push([hpos, lpos]);
+      points.push([rpos, hpos]);
+      points.push([hpos, rpos]);
+    }
+    ctx.fillStyle = 'black';
+    points.forEach(function(p){
+      var x = p[0];
+      var y = p[1];
+      ctx.beginPath();
+      ctx.arc(grid * (x + 1), grid * (y + 1), pointSize, 0, Math.PI*2, false);
+      ctx.fill();
+    });
   }
 
   this.drawStone = function() {
@@ -107,41 +155,46 @@ var GoDrawer = function(goban, hgrid) {
           var grid = this.hgrid * 2;
           ctx.beginPath();
           ctx.fillStyle = color;
-          ctx.arc(grid * (x + 1), grid * (y + 1), hgrid - 2, 0, Math.PI*2, false);
+          ctx.arc(grid * (x + 1), grid * (y + 1), this.hgrid - 2, 0, Math.PI*2, false);
           ctx.fill();
           ctx.beginPath();
           ctx.strokeStyle = 'rgb(0, 0, 0)';
-          ctx.lineWidth = 2;
-          ctx.arc(grid * (x + 1), grid * (y + 1), hgrid - 2, 0, Math.PI*2, false);
+          ctx.lineWidth = 1;
+          ctx.arc(grid * (x + 1), grid * (y + 1), this.hgrid - 2, 0, Math.PI*2, false);
           ctx.stroke();
         }
       }
     }
   }
 
-  this.drawHama = function(ctx) {
+  this.drawHama = function() {
+    var ctx = this.ctx;
     var y = this.hgrid * 2 * (this.goban.size + 1) - 6;
     ctx.fillStyle = "black";
     ctx.font = "14pt Arial";
-    ctx.fillText("Black: " + this.goban.ruledGoban.getBlackHama(), 100, y);
-    ctx.fillText("White: " + this.goban.ruledGoban.getWhiteHama(), 300, y);
-    ctx.fillText("Cnt: " + this.goban.ruledGoban.cnt, 500, y);
+    ctx.fillText("Black: " + this.goban.rule.getBlackHama(), 100, y);
+    ctx.fillText("White: " + this.goban.rule.getWhiteHama(), 200, y);
+    ctx.fillText("Cnt: " + this.goban.rule.cnt, 20, y);
+    ctx.fillText("BT: " + this.goban.rule.getScore(StoneType.BLACK), 300, y);
+    ctx.fillText("WT: " + this.goban.rule.getScore(StoneType.WHITE), 400, y);
   }
 
   this.draw = function() {
+    this.drawBackground();
+
     var ctx = this.ctx;
     ctx.save();
     ctx.translate(this.xOffset, this.yOffset);
-    this.drawBackground(ctx);
-    this.drawBoard(ctx);
-    this.drawStone(ctx);
-    this.drawHama(ctx);
+    this.drawBoard();
+    this.drawPoint();
+    this.drawStone();
+    this.drawHama();
     ctx.restore();
   }
 
   this.handleMouseEvent = function(e) {
     if (this.clickEventListener) {
-      var grid = hgrid * 2;
+      var grid = this.hgrid * 2;
       var rect = e.target.getBoundingClientRect();
       var x = e.clientX - rect.left - this.xOffset;
       var y = e.clientY - rect.top  - this.yOffset;
@@ -151,9 +204,21 @@ var GoDrawer = function(goban, hgrid) {
     }
   }
 
+  this.resize();
+
   var drawer = this;
   this.canvas.addEventListener("click", function(e) {
-    drawer.handleMouseEvent(e);
+    var upX = e.clientX;
+    var upY = e.clientY;
+    var downX = drawer.downX;
+    var downY = drawer.downY;
+    if (Math.sqrt((upX - downX) * (upX - downX) + (upY - downY) * (upY - downY)) < drawer.hgrid) {
+      drawer.handleMouseEvent(e);
+    }
+  });
+  this.canvas.addEventListener("mousedown", function(e) {
+    drawer.downX = e.clientX;
+    drawer.downY = e.clientY;
   });
 }
 
@@ -194,7 +259,7 @@ var ScanTable = function(size) {
     }
   }
 
-  this.overwrite = function(other) {
+  this.update = function(other) {
     this.clear();
     this.merge(other);
   }
@@ -254,7 +319,7 @@ var Scanner = function(size) {
   }
 }
 
-var RuledGoban = function(size) {
+var IgoRuleEngine = function(size) {
   this.size = size;
   this.scanner = new Scanner(size);
   this.removeTable = new ScanTable(size);
@@ -269,8 +334,20 @@ var RuledGoban = function(size) {
     this.hama = {}
     this.hama[StoneType.BLACK] = 0;
     this.hama[StoneType.WHITE] = 0;
+    this.board.clear();
   }
   this.clear();
+
+  this.changeStone = function() {
+    this.koX = null;
+    this.koY = null;
+    this.nextStone = StoneType.reverse(this.nextStone);
+  }
+
+  this.pass = function() {
+    this.changeStone();
+    this.cnt += 1;
+  }
 
   this.putStone = function(x, y) {
     var stone = this.nextStone;
@@ -281,7 +358,7 @@ var RuledGoban = function(size) {
     if (this.board.get(x, y) != StoneType.NONE)
       return;
 
-    this.tmpBoard.overwrite(this.board);
+    this.tmpBoard.update(this.board);
     this.tmpBoard.set(x, y, stone);
 
     this.removeTable.clear();
@@ -296,12 +373,36 @@ var RuledGoban = function(size) {
     if (this.scanner.scan(x, y, this.tmpBoard, stone, StoneType.NONE).isRunning())
       return;
 
-    this.board.overwrite(this.tmpBoard);
+    this.board.update(this.tmpBoard);
     this._updateKo();
     this.hama[stone] += this.removeTable.count();
     this.nextStone = revStone;
     this.cnt += 1;
     return true;
+  }
+
+  this.getTerritory = function(stone) {
+    var revStone = StoneType.reverse(stone);
+    var result = new ScanTable(this.size);
+
+    if (this.board.count(StoneType.BLACK) == 0 &&
+        this.board.count(StoneType.WHITE) == 0)
+      return result;
+
+    for (var x = 0; x < this.size; x++) {
+      for (var y = 0; y < this.size; y++) {
+        if (result.isMarked(x, y))
+          continue;
+        var tmp = this.scanner.scan(x, y, this.board, StoneType.NONE, revStone);
+        if (tmp.isRunning())
+          result.merge(tmp);
+      }
+    }
+    return result;
+  }
+
+  this.getScore = function(stone) {
+    return this.getTerritory(stone).count() + this.hama[stone];
   }
 
   this._removeStones = function(scannedTable) {
@@ -341,19 +442,23 @@ var RuledGoban = function(size) {
 
 var Goban = function(size) {
   this.size = size;
-  this.ruledGoban = new RuledGoban(size);
-  this.board = this.ruledGoban.board;
+  this.rule = new IgoRuleEngine(size);
+  this.board = this.rule.board;
 
   this.setStone = function(x, y, stone) {
     this.board.set(x, y, stone);
   }
 
-  this.putStone = function(x, y, stone) {
-    return this.ruledGoban.putStone(x, y, stone);
+  this.putStone = function(x, y) {
+    return this.rule.putStone(x, y);
   }
 
   this.getStone = function(x, y) {
     return this.board.get(x, y);
+  }
+
+  this.clear = function() {
+    this.rule.clear();
   }
 
   this.notify = function() {
@@ -362,15 +467,157 @@ var Goban = function(size) {
   }
 }
 
-function draw() {
-  goban = new Goban(19);
-  drawer = new GoDrawer(goban, 20);
+var Move = function(x, y, stone) {
+  this.x = x;
+  this.y = y;
+  this.stone = stone;
+
+  this.copy = function() {
+    return new Move(this.x, this.y, this.stone);
+  }
+}
+
+var MoveTreeNode = function(move, parentNode) {
+  this.parentNode = parentNode;
+  this.move = move;
+  this.children = [];
+
+  this.addChild = function(child) {
+    this.children.push(child);
+  }
+
+  this.removeChild = function(n) {
+    this.children.splice(n, 1);
+  }
+
+  this.hasChild = function() {
+    return this.children.length > 0;
+  }
+}
+
+var MoveTree = function() {
+  this.root = new MoveTreeNode(null, null);
+  this.current = this.root;
+
+  this.addChild = function(move) {
+    if (this.current.hasChild())
+      return;
+    var childNode = new MoveTreeNode(move, this.current); 
+    this.current.addChild(childNode);
+    this.current = childNode;
+  }
+
+  this.forward = function() {
+    if (this.current.hasChild()) {
+      this.current = this.current.children[0];
+      return true;
+    }
+  }
+
+  this.back = function() {
+    if (this.current != this.root) {
+      this.current = this.current.parentNode;
+      return true;
+    }
+  }
+
+  this.cut = function() {
+    if (this.current != this.root) {
+      this.current = this.current.parentNode;
+      this.current.removeChild(0);
+      return true;
+    }
+  }
+
+  this.getMoveSequence = function() {
+    var moves = [];
+    for (var cur = this.current; cur != this.root; cur = cur.parentNode)
+      moves.unshift(cur.move);
+    return moves;
+  }
+
+  this._copyHelper = function(oldNode, newNode, tree) {
+    if (oldNode === this.current)
+      tree.current = newNode;
+
+    for (var i = 0; i < oldNode.children.length; i++) {
+      var oldChild = oldNode.children[i];
+      var newChild = new MoveTreeNode(oldChild.move.copy(), newNode);
+      this._copyHelper(oldChild, newChild, tree);
+      newNode.addChild(newChild);
+    }
+  }
+
+  this.copy = function() {
+    var tree = new MoveTree();
+    this._copyHelper(this.root, tree.root, tree);
+    return tree;
+  }
+
+}
+
+var GobanPlayer = function(size, newMoveTree) { 
+  this.goban = new Goban(size);
+  this.moveTree = newMoveTree ? newMoveTree : new MoveTree();
+
+  this.putStone = function(x, y) {
+    if (!this.isHead())
+      return;
+
+    var stone = this.goban.rule.nextStone;
+    if (this.goban.putStone(x, y)) {
+      this.moveTree.addChild(new Move(x, y, stone));
+      this.goban.notify();
+    }
+  }
+
+  this.rearrange = function() {
+    this.goban.clear();
+    var moves = this.moveTree.getMoveSequence();
+    for (var i = 0; i < moves.length; i++) {
+      var move = moves[i];
+      if (move.stone != this.goban.rule.nextStone)
+        this.goban.rule.pass();
+      this.goban.putStone(move.x, move.y);
+    }
+    this.goban.notify();
+  }
+
+  this.back = function() {
+    if (this.moveTree.back())
+      this.rearrange();
+  }
+
+  this.forward = function() {
+    if (this.moveTree.forward())
+      this.rearrange();
+  }
+
+  this.cut = function() {
+    if (this.moveTree.cut())
+      this.rearrange();
+  }
+
+  this.isHead = function() {
+    return !this.moveTree.current.hasChild();
+  }
+
+  this.copy = function() {
+    var player = new GobanPlayer(this.goban.size, this.moveTree.copy());
+    player.rearrange();
+    return player;
+  }
+}
+
+var createDrawer = function(player, id) {
+  var goban = player.goban;
+  var drawer = new GoDrawer(goban, id);
+
   goban.changeEventListener = function() {
     drawer.draw();
   }
   drawer.clickEventListener = function(x, y) {
-    goban.ruledGoban.putStone(x, y);
-    goban.notify();
+    player.putStone(x, y);
   }
-  drawer.draw();
+  return drawer;
 }
