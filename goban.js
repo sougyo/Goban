@@ -7,7 +7,7 @@ var StoneType = {
     if (stone == this.WHITE) return this.BLACK;
     return;
   },
-  isStone: function(stone) {
+  exists: function(stone) {
     return stone == this.BLACK || stone == this.WHITE;
   }
 };
@@ -212,7 +212,7 @@ var GoDrawer = function(goban, canvasid) {
     var upY = e.clientY;
     var downX = drawer.downX;
     var downY = drawer.downY;
-    if (Math.sqrt((upX - downX) * (upX - downX) + (upY - downY) * (upY - downY)) < drawer.hgrid) {
+    if (Math.sqrt(Math.pow((upX - downX), 2) + Math.pow((upY - downY), 2) < drawer.hgrid)) {
       drawer.handleMouseEvent(e);
     }
   });
@@ -225,7 +225,7 @@ var GoDrawer = function(goban, canvasid) {
 var ScanTable = function(size) {
   this.size = size;
   this.table = new Array(this.size);
-  this.running = true;
+  this.enabled = true;
 
   for (var x = 0; x < this.size; x++) {
     this.table[x] = new Array(this.size);
@@ -239,16 +239,16 @@ var ScanTable = function(size) {
     return this.table[x][y];
   }
 
-  this.stopScan = function() {
-    this.running = false;
+  this.disableScan = function() {
+    this.enabled = false;
   }
 
-  this.isRunning = function() {
-    return this.running;
+  this.isEnabled = function() {
+    return this.enabled;
   }
 
   this.merge = function(other) {
-    if (!other.isRunning())
+    if (!other.isEnabled())
       return;
     if (this.size != other.size)
       return;
@@ -280,7 +280,7 @@ var ScanTable = function(size) {
         this.table[x][y] = false;
       }
     }
-    this.running = true;
+    this.enabled = true;
   }
 
   this.clear();
@@ -307,7 +307,7 @@ var Scanner = function(size) {
     if (this.scanTable.isMarked(x, y))
       return;
     if (this.board.get(x, y) == this.abortStone)
-      this.scanTable.stopScan();
+      this.scanTable.disableScan();
     if (this.board.get(x, y) != this.scanableStone)
       return;
     this.scanTable.mark(x, y);
@@ -362,15 +362,16 @@ var IgoRuleEngine = function(size) {
     this.tmpBoard.set(x, y, stone);
 
     this.removeTable.clear();
-    this.removeTable.merge(this.scanner.scan(x - 1, y, this.tmpBoard, revStone, StoneType.NONE)); 
-    this.removeTable.merge(this.scanner.scan(x + 1, y, this.tmpBoard, revStone, StoneType.NONE)); 
-    this.removeTable.merge(this.scanner.scan(x, y - 1, this.tmpBoard, revStone, StoneType.NONE)); 
-    this.removeTable.merge(this.scanner.scan(x, y + 1, this.tmpBoard, revStone, StoneType.NONE)); 
+    this._mergeRemoveTable(x - 1, y, revStone);
+    this._mergeRemoveTable(x + 1, y, revStone);
+    this._mergeRemoveTable(x, y - 1, revStone);
+    this._mergeRemoveTable(x, y + 1, revStone);
+
     if (x == this.koX && y == this.koY && this.removeTable.count() == 1)
       return;
     this._removeStones(this.removeTable);
 
-    if (this.scanner.scan(x, y, this.tmpBoard, stone, StoneType.NONE).isRunning())
+    if (this.scanner.scan(x, y, this.tmpBoard, stone, StoneType.NONE).isEnabled())
       return;
 
     this.board.update(this.tmpBoard);
@@ -379,6 +380,10 @@ var IgoRuleEngine = function(size) {
     this.nextStone = revStone;
     this.cnt += 1;
     return true;
+  }
+
+  this._mergeRemoveTable = function(x, y, stone) {
+    this.removeTable.merge(this.scanner.scan(x, y, this.tmpBoard, stone, StoneType.NONE)); 
   }
 
   this.getTerritory = function(stone) {
@@ -394,7 +399,7 @@ var IgoRuleEngine = function(size) {
         if (result.isMarked(x, y))
           continue;
         var tmp = this.scanner.scan(x, y, this.board, StoneType.NONE, revStone);
-        if (tmp.isRunning())
+        if (tmp.isEnabled())
           result.merge(tmp);
       }
     }
@@ -571,7 +576,7 @@ var GobanPlayer = function(size, newMoveTree) {
     }
   }
 
-  this.rearrange = function() {
+  this.updateGoban = function() {
     this.goban.clear();
     var moves = this.moveTree.getMoveSequence();
     for (var i = 0; i < moves.length; i++) {
@@ -585,17 +590,17 @@ var GobanPlayer = function(size, newMoveTree) {
 
   this.back = function() {
     if (this.moveTree.back())
-      this.rearrange();
+      this.updateGoban();
   }
 
   this.forward = function() {
     if (this.moveTree.forward())
-      this.rearrange();
+      this.updateGoban();
   }
 
   this.cut = function() {
     if (this.moveTree.cut())
-      this.rearrange();
+      this.updateGoban();
   }
 
   this.isHead = function() {
@@ -604,7 +609,7 @@ var GobanPlayer = function(size, newMoveTree) {
 
   this.copy = function() {
     var player = new GobanPlayer(this.goban.size, this.moveTree.copy());
-    player.rearrange();
+    player.updateGoban();
     return player;
   }
 }
