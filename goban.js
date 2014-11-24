@@ -66,35 +66,30 @@ var Board = function(size) {
   this.clear();
 }
 
-var GoDrawer = function(goban, canvasid) {
-  this.canvas = document.getElementById(canvasid);
-  if ( ! this.canvas || ! this.canvas.getContext ) {
-    return;
-  }
-  this.ctx = this.canvas.getContext('2d');
-  this.goban = goban;
+var DrawerEnv = function(size, ctx) {
+  this.size = size;
+  this.ctx = ctx;
 
   this.paddingTop    = 10;
   this.paddingBottom = 50;
   this.paddingLeft   = 20;
   this.paddingRight  = 20;
 
-  this.resize = function() {
-    this.canvasWidth  = $(this.canvas).width();
-    this.canvasHeight = $(this.canvas).height();
+  this.resize = function(width, height) {
+    this.canvasWidth  = width;
+    this.canvasHeight = height;
 
     this.boardAreaWidth  = this.canvasWidth  - this.paddingLeft - this.paddingRight;
     this.boardAreaHeight = this.canvasHeight - this.paddingTop  - this.paddingBottom;
-    this.hgrid = Math.floor(Math.min(this.boardAreaWidth, this.boardAreaHeight) / (2 * this.goban.size));
+    this.hgrid = Math.floor(Math.min(this.boardAreaWidth, this.boardAreaHeight) / (2 * this.size));
     this.grid  = this.hgrid * 2;
-    var boardSize = this.grid * this.goban.size;
+    var boardSize = this.grid * this.size;
 
     this.xOffset = (this.boardAreaWidth  - boardSize) / 2 + this.paddingLeft;
     this.yOffset = (this.boardAreaHeight - boardSize) / 2 + this.paddingTop;
 
     this.ctx.canvas.width  = this.canvasWidth;
     this.ctx.canvas.height = this.canvasHeight;
-    this.draw();
   }
 
   this.toX = function(x) {
@@ -105,30 +100,55 @@ var GoDrawer = function(goban, canvasid) {
     return this.grid * y + this.hgrid;
   }
 
-  this.drawBackground = function() {
-    this.ctx.fillStyle = 'rgb(222, 184, 135)';
-    this.ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
+  this.drawBoardCircle = function(x, y, r, fill) {
+    var ctx = this.ctx;
+    ctx.beginPath();
+    ctx.arc(this.toX(x), this.toY(y), r, 0, Math.PI*2, false);
+    if (fill)
+      ctx.fill();
+    else
+      ctx.stroke();
   }
 
-  this.drawBoard = function() {
-    var size = this.goban.size;
-    var grid = this.grid;
+  this.drawBoardLine = function(x1, y1, x2, y2) {
     var ctx = this.ctx;
-    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(this.toX(x1), this.toY(y1));
+    ctx.lineTo(this.toX(x2), this.toY(y2));
+    ctx.stroke();
+  }
+}
+
+var GoDrawer = function(goban, canvasid) {
+  this.canvas = document.getElementById(canvasid);
+  if ( ! this.canvas || ! this.canvas.getContext ) {
+    return;
+  }
+
+  this.goban = goban;
+  this.env = new DrawerEnv(this.goban.size, this.canvas.getContext('2d'));
+
+  this.resize = function() {
+    this.env.resize($(this.canvas).width(), $(this.canvas).height());
+    this.draw();
+  }
+
+  this.drawBackground = function(env) {
+    env.ctx.fillStyle = 'rgb(222, 184, 135)';
+    env.ctx.fillRect(0, 0, env.canvasWidth, env.canvasHeight);
+  }
+
+  this.drawBoard = function(env) {
+    var size = env.size;
+    env.ctx.lineWidth = 2;
     for (var i = 0; i < size; i++) {
-      ctx.beginPath();
-      ctx.moveTo(this.toX(0), this.toY(i));
-      ctx.lineTo(this.toX(size - 1), this.toY(i));
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(this.toX(i), this.toY(0));
-      ctx.lineTo(this.toX(i), this.toY(size - 1));
-      ctx.stroke();
+      env.drawBoardLine(0, i, size - 1, i);
+      env.drawBoardLine(i, 0, i, size - 1);
     }
   }
 
-  this.drawPoint = function() {
-    var size = this.goban.size;
+  this.drawPoint = function(env) {
+    var size = env.size;
     var lpos = 3;
     var rpos = size - lpos - 1;
     var hpos = Math.floor(size / 2);
@@ -148,49 +168,38 @@ var GoDrawer = function(goban, canvasid) {
       points.push([hpos, rpos]);
     }
 
-    var ctx = this.ctx;
-    var pointSize = this.hgrid / 4;
-    var toX = this.toX;
-    var toY = this.toY;
-    ctx.fillStyle = 'black';
-    points.forEach(function(p){
-      var x = p[0];
-      var y = p[1];
-      ctx.beginPath();
-      ctx.arc(toX(x), toY(y), pointSize, 0, Math.PI*2, false);
-      ctx.fill();
-    });
+    var pointSize = env.hgrid / 4;
+    env.ctx.fillStyle = 'black';
+    for (var i = 0; i < points.length; i++) {
+      var p = points[i];
+      env.drawBoardCircle(p[0], p[1], pointSize, true);
+    }
   }
 
-  this.drawStone = function() {
-    var size = this.goban.size;
-    var stoneSize = this.hgrid - 2;
-    var ctx = this.ctx;
+  this.drawStone = function(env) {
+    var size = env.size;
+    var stoneSize = env.hgrid - 2;
+    var ctx = env.ctx;
     for (var x = 0; x < size; x++) {
       for (var y = 0; y < size; y++) {
         var stone = this.goban.getStone(x, y);
         if (StoneType.exists(stone)) {
           color = stone == StoneType.BLACK ? 'black' : 'white';
-
-          ctx.beginPath();
           ctx.fillStyle = color;
-          ctx.arc(this.toX(x), this.toY(y), stoneSize, 0, Math.PI*2, false);
-          ctx.fill();
-          ctx.beginPath();
           ctx.strokeStyle = 'rgb(0, 0, 0)';
           ctx.lineWidth = 2;
-          ctx.arc(this.toX(x), this.toY(y), stoneSize, 0, Math.PI*2, false);
-          ctx.stroke();
+          env.drawBoardCircle(x, y, stoneSize, true);
+          env.drawBoardCircle(x, y, stoneSize, false);
         }
       }
     }
   }
 
-  this.drawHama = function() {
-    if (this.paddingBottom < 10)
+  this.drawHama = function(env) {
+    if (env.paddingBottom < 10)
       return;
-    var ctx = this.ctx;
-    var y = this.paddingTop + this.boardAreaHeight + 5;
+    var ctx = env.ctx;
+    var y = env.paddingTop + env.boardAreaHeight + 5;
     ctx.fillStyle = "black";
     ctx.font = "14pt Arial";
     ctx.fillText("Cnt: "   + this.goban.rule.cnt, 20, y);
@@ -199,45 +208,46 @@ var GoDrawer = function(goban, canvasid) {
   }
 
   this.draw = function() {
-    this.drawBackground();
+    var env = this.env;
+    this.drawBackground(env);
 
-    var ctx = this.ctx;
-    ctx.save();
-    ctx.translate(this.xOffset, this.yOffset);
-    this.drawBoard();
-    this.drawPoint();
-    this.drawStone();
-    this.drawHama();
-    ctx.restore();
+    env.ctx.save();
+    env.ctx.translate(env.xOffset, env.yOffset);
+    this.drawBoard(env);
+    this.drawPoint(env);
+    this.drawStone(env);
+    this.drawHama(env);
+    env.ctx.restore();
   }
 
+
+  this.resize();
+
+  var drawer = this;
+  var env = this.env;
   this.handleMouseEvent = function(e) {
     if (this.clickEventListener) {
-      var grid = this.grid;
+      var grid = env.grid;
       var rect = e.target.getBoundingClientRect();
-      var x = e.clientX - rect.left - this.xOffset;
-      var y = e.clientY - rect.top  - this.yOffset;
+      var x = e.clientX - rect.left - env.xOffset;
+      var y = e.clientY - rect.top  - env.yOffset;
       var x = Math.floor(x / grid);
       var y = Math.floor(y / grid);
       this.clickEventListener(x, y);
     }
   }
-
-  this.resize();
-
-  var drawer = this;
   this.canvas.addEventListener("click", function(e) {
     var upX = e.clientX;
     var upY = e.clientY;
-    var downX = drawer.downX;
-    var downY = drawer.downY;
-    if (Math.sqrt(Math.pow((upX - downX), 2) + Math.pow((upY - downY), 2) < drawer.hgrid)) {
+    var downX = env.downX;
+    var downY = env.downY;
+    if (Math.sqrt(Math.pow((upX - downX), 2) + Math.pow((upY - downY), 2) < env.hgrid)) {
       drawer.handleMouseEvent(e);
     }
   });
   this.canvas.addEventListener("mousedown", function(e) {
-    drawer.downX = e.clientX;
-    drawer.downY = e.clientY;
+    env.downX = e.clientX;
+    env.downY = e.clientY;
   });
 }
 
