@@ -31,32 +31,26 @@ var Board = function(size) {
     return this.board[x][y];
   }
 
-  this.update = function(other) {
+  this.copyFrom = function(other) {
     if (this.size != other.size)
       return;
-    for (var x = 0; x < this.size; x++) {
-      for (var y = 0; y < this.size; y++) {
+    for (var x = 0; x < this.size; x++)
+      for (var y = 0; y < this.size; y++)
         this.board[x][y] = other.get(x, y);
-      }
-    }
   }
 
   this.count = function(stone) {
     var c = 0;
-    for (var x = 0; x < this.size; x++) {
-      for (var y = 0; y < this.size; y++) {
+    for (var x = 0; x < this.size; x++)
+      for (var y = 0; y < this.size; y++)
         if (this.board[x][y] == stone) c++;
-      }
-    }
     return c;
   }
 
   this.clear = function() {
-    for (var x = 0; x < this.size; x++) {
-      for (var y = 0; y < this.size; y++) {
+    for (var x = 0; x < this.size; x++)
+      for (var y = 0; y < this.size; y++)
         this.board[x][y] = StoneType.NONE;
-      }
-    }
   }
 
   this.isOutOfRange = function(x, y) {
@@ -119,12 +113,13 @@ var DrawerEnv = function(size, ctx) {
   }
 }
 
-var GoDrawer = function(goban, canvasid) {
+var GoDrawer = function(goban, canvasid, tree) {
   this.canvas = document.getElementById(canvasid);
   if ( ! this.canvas || ! this.canvas.getContext ) {
     return;
   }
 
+  this.tree = tree; //should be removed later
   this.goban = goban;
   this.env = new DrawerEnv(this.goban.size, this.canvas.getContext('2d'));
 
@@ -176,6 +171,19 @@ var GoDrawer = function(goban, canvasid) {
     }
   }
 
+  this.drawChildren = function(env) {
+    var nodes = this.tree.current.children;
+    if (nodes.length < 2)
+      return;
+
+    var pointSize = env.hgrid / 2;
+    env.ctx.fillStyle = 'pink';
+    for (var i = 0; i < nodes.length; i++) {
+      var move = nodes[i].move;
+      env.drawBoardCircle(move.x, move.y, pointSize, true);
+    }
+  }
+
   this.drawStone = function(env) {
     var size = env.size;
     var stoneSize = env.hgrid - 2;
@@ -217,6 +225,7 @@ var GoDrawer = function(goban, canvasid) {
     this.drawPoint(env);
     this.drawStone(env);
     this.drawHama(env);
+    this.drawChildren(env);
     env.ctx.restore();
   }
 
@@ -281,34 +290,23 @@ var ScanTable = function(size) {
       return;
     if (this.size != other.size)
       return;
-    for (var x = 0; x < this.size; x++) {
-      for (var y = 0; y < this.size; y++) {
+    for (var x = 0; x < this.size; x++)
+      for (var y = 0; y < this.size; y++)
         this.table[x][y] = this.table[x][y] || other.table[x][y];
-      }
-    }
-  }
-
-  this.update = function(other) {
-    this.clear();
-    this.merge(other);
   }
 
   this.count = function() {
     var c = 0;
-    for (var x = 0; x < this.size; x++) {
-      for (var y = 0; y < this.size; y++) {
+    for (var x = 0; x < this.size; x++)
+      for (var y = 0; y < this.size; y++)
         if (this.table[x][y]) c++;
-      }
-    }
     return c;
   }
 
   this.clear = function() {
-    for (var x = 0; x < this.size; x++) {
-      for (var y = 0; y < this.size; y++) {
+    for (var x = 0; x < this.size; x++)
+      for (var y = 0; y < this.size; y++)
         this.table[x][y] = false;
-      }
-    }
     this.enabled = true;
   }
 
@@ -387,7 +385,7 @@ var IgoRuleEngine = function(size) {
     if (this.board.get(x, y) != StoneType.NONE)
       return;
 
-    this.tmpBoard.update(this.board);
+    this.tmpBoard.copyFrom(this.board);
     this.tmpBoard.set(x, y, stone);
 
     this.removeTable.clear();
@@ -403,7 +401,7 @@ var IgoRuleEngine = function(size) {
     if (this.scanner.scan(x, y, this.tmpBoard, stone, StoneType.NONE).isEnabled())
       return;
 
-    this.board.update(this.tmpBoard);
+    this.board.copyFrom(this.tmpBoard);
     this._updateKo();
     this.hama[stone] += this.removeTable.count();
     this.nextStone = revStone;
@@ -509,41 +507,78 @@ var Move = function(x, y, stone) {
   this.copy = function() {
     return new Move(this.x, this.y, this.stone);
   }
+
+  this.equals = function(other) {
+    return this.x == other.x && this.y == other.y && this.stone == other.stone;
+  }
 }
 
 var MoveTreeNode = function(move, parentNode) {
   this.parentNode = parentNode;
   this.move = move;
   this.children = [];
+  this.childIndex = 0;
+
+  this.copy = function(parentNode) {
+    var move = this.move ? this.move.copy() : null;
+    var result = new MoveTreeNode(move, parentNode);
+    for (var i = 0; i < this.children.length; i++)
+      result.addChild(this.children[i].copy(result));
+    result.setChildIndex(this.childIndex);
+    return result;
+  }
 
   this.addChild = function(child) {
     this.children.push(child);
+    this.childIndex = this.children.length - 1;
   }
 
-  this.removeChild = function(n) {
-    this.children.splice(n, 1);
+  this.removeChild = function() {
+    this.children.splice(this.childIndex, 1);
+    this.childIndex = 0;
   }
 
   this.hasChild = function() {
     return this.children.length > 0;
   }
+
+  this.setChildIndex = function(i) {
+    if (0 <= i && i < this.children.length)
+      this.childIndex = i;
+  }
+
+  this.getChild = function() {
+    if (this.hasChild())
+      return this.children[this.childIndex];
+  }
+
+  this.findChildIndex = function(move) {
+    for (var i = 0; i < this.children.length; i++)
+      if (this.children[i].move.equals(move))
+        return i;
+    return null;
+  }
 }
 
-var MoveTree = function() {
-  this.root = new MoveTreeNode(null, null);
+var MoveTree = function(newRoot) {
+  this.root = newRoot ? newRoot : new MoveTreeNode(null, null);
   this.current = this.root;
 
-  this.addChild = function(move) {
-    if (this.current.hasChild())
-      return;
-    var childNode = new MoveTreeNode(move, this.current); 
-    this.current.addChild(childNode);
-    this.current = childNode;
+  this.put = function(move) {
+    var i = this.current.findChildIndex(move);
+    if (i == null) {
+      var childNode = new MoveTreeNode(move, this.current); 
+      this.current.addChild(childNode);
+    } else {
+      this.current.setChildIndex(i);
+    }
+
+    this.current = this.current.getChild();
   }
 
   this.forward = function() {
     if (this.current.hasChild()) {
-      this.current = this.current.children[0];
+      this.current = this.current.getChild();
       return true;
     }
   }
@@ -558,7 +593,7 @@ var MoveTree = function() {
   this.cut = function() {
     if (this.current != this.root) {
       this.current = this.current.parentNode;
-      this.current.removeChild(0);
+      this.current.removeChild();
       return true;
     }
   }
@@ -570,21 +605,19 @@ var MoveTree = function() {
     return moves;
   }
 
-  this._copyHelper = function(oldNode, newNode, tree) {
-    if (oldNode === this.current)
-      tree.current = newNode;
-
-    for (var i = 0; i < oldNode.children.length; i++) {
-      var oldChild = oldNode.children[i];
-      var newChild = new MoveTreeNode(oldChild.move.copy(), newNode);
-      this._copyHelper(oldChild, newChild, tree);
-      newNode.addChild(newChild);
-    }
-  }
-
   this.copy = function() {
-    var tree = new MoveTree();
-    this._copyHelper(this.root, tree.root, tree);
+    var tree = new MoveTree(this.root.copy(null));
+
+    var cur1 = this.root;
+    var cur2 = tree.root;
+    while (cur1) {
+      if (cur1 === this.current) {
+        tree.current = cur2;
+        break;
+      }
+      cur1 = cur1.getChild();
+      cur2 = cur2.getChild();
+    }
     return tree;
   }
 
@@ -595,12 +628,9 @@ var GobanPlayer = function(size, newMoveTree) {
   this.moveTree = newMoveTree ? newMoveTree : new MoveTree();
 
   this.putStone = function(x, y) {
-    if (!this.isHead())
-      return;
-
     var stone = this.goban.rule.nextStone;
     if (this.goban.putStone(x, y)) {
-      this.moveTree.addChild(new Move(x, y, stone));
+      this.moveTree.put(new Move(x, y, stone));
       this.goban.notify();
     }
   }
@@ -643,13 +673,16 @@ var GobanPlayer = function(size, newMoveTree) {
   }
 
   this.pass = function() {
-    //todo
+    var stone = this.goban.rule.nextStone;
+    this.moveTree.put(new Move(-1, -1, stone));
+    this.goban.rule.pass();
+    this.goban.notify();
   }
 }
 
 var createDrawer = function(player, id) {
   var goban = player.goban;
-  var drawer = new GoDrawer(goban, id);
+  var drawer = new GoDrawer(goban, id, player.moveTree);
 
   goban.changeEventListener = function() {
     drawer.draw();
