@@ -77,10 +77,10 @@ var DrawerEnv = function(size, ctx) {
     this.boardAreaHeight = this.canvasHeight - this.paddingTop  - this.paddingBottom;
     this.hgrid = Math.floor(Math.min(this.boardAreaWidth, this.boardAreaHeight) / (2 * this.size));
     this.grid  = this.hgrid * 2;
-    var boardSize = this.grid * this.size;
+    this.boardSize = this.grid * this.size;
 
-    this.xOffset = (this.boardAreaWidth  - boardSize) / 2 + this.paddingLeft;
-    this.yOffset = (this.boardAreaHeight - boardSize) / 2 + this.paddingTop;
+    this.xOffset = (this.boardAreaWidth  - this.boardSize) / 2 + this.paddingLeft;
+    this.yOffset = (this.boardAreaHeight - this.boardSize) / 2 + this.paddingTop;
 
     this.ctx.canvas.width  = this.canvasWidth;
     this.ctx.canvas.height = this.canvasHeight;
@@ -94,10 +94,12 @@ var DrawerEnv = function(size, ctx) {
     return this.grid * y + this.hgrid;
   }
 
-  this.drawBoardCircle = function(x, y, r, fill) {
+  this.drawBoardCircle = function(x, y, r, fill, dx, dy) {
+    dx = dx ? dx : 0;
+    dy = dy ? dy : 0;
     var ctx = this.ctx;
     ctx.beginPath();
-    ctx.arc(this.toX(x), this.toY(y), r, 0, Math.PI*2, false);
+    ctx.arc(this.toX(x) + dx, this.toY(y) + dy, r, 0, Math.PI*2, false);
     if (fill)
       ctx.fill();
     else
@@ -111,6 +113,14 @@ var DrawerEnv = function(size, ctx) {
     ctx.lineTo(this.toX(x2), this.toY(y2));
     ctx.stroke();
   }
+
+  this.drawImage = function(image, x, y, size) {
+    var ctx = this.ctx;
+    var dx = this.toX(x) - size / 2;
+    var dy = this.toY(y) - size / 2;
+    ctx.drawImage(image, dx, dy, size, size);
+  }
+
 }
 
 var GoDrawer = function(goban, canvasid, tree) {
@@ -123,19 +133,43 @@ var GoDrawer = function(goban, canvasid, tree) {
   this.goban = goban;
   this.env = new DrawerEnv(this.goban.size, this.canvas.getContext('2d'));
 
+  this.blackImg = new Image();
+  this.blackImg.src = "../images/black.png";
+  this.whiteImg = new Image();
+  this.whiteImg.src = "../images/white.png";
+  this.woodImg = new Image();
+  this.woodImg.src = "../images/wood.png";
+
+  var drawer = this;
+  this.woodImg.onload = function() {
+    drawer.draw();
+  }
+
   this.resize = function() {
     this.env.resize($(this.canvas).width(), $(this.canvas).height());
     this.draw();
   }
 
   this.drawBackground = function(env) {
-    env.ctx.fillStyle = 'rgb(222, 184, 135)';
+    env.ctx.fillStyle = 'rgb(210, 180, 140)';
+    //env.ctx.fillStyle = 'rgb(189, 183, 107)';
     env.ctx.fillRect(0, 0, env.canvasWidth, env.canvasHeight);
+
+    var drawFunc = function() {
+      try {
+        env.ctx.drawImage(drawer.woodImg, env.xOffset, env.yOffset, env.boardSize, env.boardSize);
+      } catch (e) {
+        if (e.name != "NS_ERROR_NOT_AVAILABLE")
+          throw e;
+      }
+    }
+    drawFunc();
   }
 
   this.drawBoard = function(env) {
     var size = env.size;
-    env.ctx.lineWidth = 2;
+    env.ctx.lineWidth = 1;
+    env.ctx.strokeStyle = 'rgb(30, 30, 30)';
     for (var i = 0; i < size; i++) {
       env.drawBoardLine(0, i, size - 1, i);
       env.drawBoardLine(i, 0, i, size - 1);
@@ -184,20 +218,52 @@ var GoDrawer = function(goban, canvasid, tree) {
     }
   }
 
+  this.drawShadow = function(env) {
+    var size = env.size;
+    var offset = env.hgrid / 6;
+    var shadowSize = env.hgrid * 0.9;
+    var ctx = env.ctx;
+
+    var save = ctx.globalAlpha;
+    ctx.fillStyle = 'black';
+    ctx.globalAlpha = 0.2;
+    for (var x = 0; x < size; x++) {
+      for (var y = 0; y < size; y++) {
+        if (StoneType.exists(this.goban.getStone(x, y))) {
+          env.drawBoardCircle(x, y, shadowSize, true, -offset, offset);
+        }
+      }
+    }
+    ctx.globalAlpha = save;
+  }
+
   this.drawStone = function(env) {
     var size = env.size;
-    var stoneSize = env.hgrid - 2;
+    var stoneSize = env.hgrid - 1;
     var ctx = env.ctx;
     for (var x = 0; x < size; x++) {
       for (var y = 0; y < size; y++) {
         var stone = this.goban.getStone(x, y);
         if (StoneType.exists(stone)) {
-          color = stone == StoneType.BLACK ? 'black' : 'white';
+          color = stone == StoneType.BLACK ? 'black' : 'rgb(210, 210, 210)';
           ctx.fillStyle = color;
           ctx.strokeStyle = 'rgb(0, 0, 0)';
           ctx.lineWidth = 2;
           env.drawBoardCircle(x, y, stoneSize, true);
-          env.drawBoardCircle(x, y, stoneSize, false);
+        }
+      }
+    }
+  }
+
+  this.drawStoneImage = function(env) {
+    var size = env.size;
+
+    for (var x = 0; x < size; x++) {
+      for (var y = 0; y < size; y++) {
+        var stone = this.goban.getStone(x, y);
+        if (StoneType.exists(stone)) {
+          var img = stone == StoneType.BLACK ? this.blackImg : this.whiteImg;
+          env.drawImage(img, x, y, env.grid - 2);
         }
       }
     }
@@ -223,7 +289,9 @@ var GoDrawer = function(goban, canvasid, tree) {
     env.ctx.translate(env.xOffset, env.yOffset);
     this.drawBoard(env);
     this.drawPoint(env);
+    this.drawShadow(env);
     this.drawStone(env);
+    this.drawStoneImage(env);
     this.drawHama(env);
     this.drawChildren(env);
     env.ctx.restore();
@@ -232,7 +300,6 @@ var GoDrawer = function(goban, canvasid, tree) {
 
   this.resize();
 
-  var drawer = this;
   var env = this.env;
   this.handleMouseEvent = function(e) {
     if (this.clickEventListener) {
