@@ -15,9 +15,8 @@ var StoneType = {
 var Board = function(size) {
   this.size = size;
   this.board = new Array(size);
-  for (var x = 0; x < this.size; x++) {
+  for (var x = 0; x < this.size; x++)
     this.board[x] = new Array(size);
-  }
 
   this.set = function(x, y, stone) {
     if (this.isOutOfRange(x, y))
@@ -118,32 +117,38 @@ var DrawerEnv = function(size, ctx) {
     var ctx = this.ctx;
     var dx = this.toX(x) - size / 2;
     var dy = this.toY(y) - size / 2;
-    ctx.drawImage(image, dx, dy, size, size);
+    try {
+      ctx.drawImage(image, dx, dy, size, size);
+    } catch (e) {
+      if (e.name != "NS_ERROR_NOT_AVAILABLE")
+        throw e;
+    }
   }
 
 }
 
 var GoDrawer = function(goban, canvasid, tree) {
   this.canvas = document.getElementById(canvasid);
-  if ( ! this.canvas || ! this.canvas.getContext ) {
+  if ( ! this.canvas || ! this.canvas.getContext )
     return;
-  }
 
   this.tree = tree; //should be removed later
   this.goban = goban;
   this.env = new DrawerEnv(this.goban.size, this.canvas.getContext('2d'));
 
-  this.blackImg = new Image();
-  this.blackImg.src = "../images/black.png";
-  this.whiteImg = new Image();
-  this.whiteImg.src = "../images/white.png";
-  this.woodImg = new Image();
-  this.woodImg.src = "../images/wood.png";
-
   var drawer = this;
-  this.woodImg.onload = function() {
-    drawer.draw();
+  this.createImage = function(path) {
+    var img = new Image();
+    img.src = path;
+    img.onload = function() {
+      drawer.draw();
+    }
+    return img;
   }
+
+  this.blackImg = this.createImage("../images/black.png");
+  this.whiteImg = this.createImage("../images/white.png");
+  this.woodImg  = this.createImage("../images/wood.png");
 
   this.resize = function() {
     this.env.resize($(this.canvas).width(), $(this.canvas).height());
@@ -154,16 +159,7 @@ var GoDrawer = function(goban, canvasid, tree) {
     env.ctx.fillStyle = 'rgb(210, 180, 140)';
     //env.ctx.fillStyle = 'rgb(189, 183, 107)';
     env.ctx.fillRect(0, 0, env.canvasWidth, env.canvasHeight);
-
-    var drawFunc = function() {
-      try {
-        env.ctx.drawImage(drawer.woodImg, env.xOffset, env.yOffset, env.boardSize, env.boardSize);
-      } catch (e) {
-        if (e.name != "NS_ERROR_NOT_AVAILABLE")
-          throw e;
-      }
-    }
-    drawFunc();
+    env.ctx.drawImage(drawer.woodImg, env.xOffset, env.yOffset, env.boardSize, env.boardSize);
   }
 
   this.drawBoard = function(env) {
@@ -227,13 +223,11 @@ var GoDrawer = function(goban, canvasid, tree) {
     var save = ctx.globalAlpha;
     ctx.fillStyle = 'black';
     ctx.globalAlpha = 0.2;
-    for (var x = 0; x < size; x++) {
-      for (var y = 0; y < size; y++) {
-        if (StoneType.exists(this.goban.getStone(x, y))) {
+    for (var x = 0; x < size; x++)
+      for (var y = 0; y < size; y++)
+        if (StoneType.exists(this.goban.getStone(x, y)))
           env.drawBoardCircle(x, y, shadowSize, true, -offset, offset);
-        }
-      }
-    }
+
     ctx.globalAlpha = save;
   }
 
