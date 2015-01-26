@@ -560,29 +560,60 @@ var Goban = function(size) {
   }
 }
 
-var Move = function(x, y, stone) {
-  this.x = x;
-  this.y = y;
-  this.stone = stone;
+var SgfProperty = function(propIdent) {
+  this.propIdent = propIdent;
+  this.propValues = [];
 
-  this.copy = function() {
-    return new Move(this.x, this.y, this.stone);
+  this.addPropValue = function(propValue) {
+    this.propValues.push(propValue);
   }
 
-  this.equals = function(other) {
-    return this.x == other.x && this.y == other.y && this.stone == other.stone;
+  this.copy = function() {
+    var result = new SgfProperty(this.propIdent);
+    for (var i = 0; i < this.propValues.length; i++)
+      result.addPropValue(this.propValues[i]);
+    return result;
   }
 }
 
-var MoveTreeNode = function(move, parentNode) {
+var SgfNode = function(parentNode) {
+  this.properties = [];
+
   this.parentNode = parentNode;
-  this.move = move;
   this.children = [];
   this.childIndex = 0;
 
+  this.addProperty = function(property) {
+    if (!this.findProperty(property.propIdent))
+      this.properties.push(property);
+  }
+
+  this.clearProperties = function () {
+    this.properties.clear();
+  }
+
+  this.findProperty = function(propIdent) {
+    for (var i = 0; i < this.properties.length; i++) {
+      var property = this.properties[i];
+      if (property.propIdent == propIdent)
+        return property;
+    }
+    return null;
+  }
+
+  this.removeProperty = function(propIdent) {
+    for (var i = 0; i < this.properties.length; i++) {
+      if (this.properties[i].propIdent == propIdent) {
+        this.properties.splice(i, 1);
+        return;
+      }
+    }
+  }
+
   this.copy = function(parentNode) {
-    var move = this.move ? this.move.copy() : null;
-    var result = new MoveTreeNode(move, parentNode);
+    var result = new SgfNode(parentNode);
+    for (var i = 0; i < this.properties.length; i++)
+      result.addProperty(this.properties[i].copy());
     for (var i = 0; i < this.children.length; i++)
       result.addChild(this.children[i].copy(result));
     result.setChildIndex(this.childIndex);
@@ -621,19 +652,16 @@ var MoveTreeNode = function(move, parentNode) {
   }
 }
 
-var MoveTree = function(newRoot) {
-  this.root = newRoot ? newRoot : new MoveTreeNode(null, null);
+var SgfTree = function() {
+  this.root = new SgfNode(null);
   this.current = this.root;
 
-  this.put = function(move) {
-    var i = this.current.findChildIndex(move);
-    if (i == null) {
-      var childNode = new MoveTreeNode(move, this.current); 
-      this.current.addChild(childNode);
-    } else {
-      this.current.setChildIndex(i);
-    }
+  this.getCurrentNode = function() {
+    return this.current;
+  }
 
+  this.newChild = function() {
+    this.current.addChild(new SgfNode(this.current));
     this.current = this.current.getChild();
   }
 
@@ -659,15 +687,16 @@ var MoveTree = function(newRoot) {
     }
   }
 
-  this.getMoveSequence = function() {
-    var moves = [];
+  this.toSequence = function() {
+    var nodes = [];
     for (var cur = this.current; cur != this.root; cur = cur.parentNode)
-      moves.unshift(cur.move);
-    return moves;
+      nodes.unshift(cur);
+    return nodes;
   }
 
   this.copy = function() {
-    var tree = new MoveTree(this.root.copy(null));
+    var tree = new SgfTree();
+    tree.root = this.root.copy(null);
 
     var cur1 = this.root;
     var cur2 = tree.root;
@@ -684,9 +713,17 @@ var MoveTree = function(newRoot) {
 
 }
 
+var SgfGameCollection = function() {
+  this.gameTrees = [];
+
+  this.addTree = function(gameTree) {
+    this.gameTrees.push(gameTree);
+  }
+}
+
 var GobanPlayer = function(size, newMoveTree) { 
   this.goban = new Goban(size);
-  this.moveTree = newMoveTree ? newMoveTree : new MoveTree();
+  this.moveTree = newMoveTree ? newMoveTree : new SgfTree();
 
   this.putStone = function(x, y) {
     var stone = this.goban.rule.nextStone;
@@ -698,7 +735,7 @@ var GobanPlayer = function(size, newMoveTree) {
 
   this.updateGoban = function() {
     this.goban.clear();
-    var moves = this.moveTree.getMoveSequence();
+    var moves = this.moveTree.toSequence();
     for (var i = 0; i < moves.length; i++) {
       var move = moves[i];
       if (move.stone != this.goban.rule.nextStone)
@@ -752,4 +789,10 @@ var createDrawer = function(player, id) {
     player.putStone(x, y);
   }
   return drawer;
+}
+
+module.exports = {
+ SgfProperty: SgfProperty,
+ SgfTree:     SgfTree,
+ SgfProperty: SgfProperty
 }
