@@ -426,15 +426,17 @@ var IgoRuleEngine = function(size) {
   }
   this.clear();
 
-  this.changeStone = function() {
+  this.pass = function() {
     this.koX = null;
     this.koY = null;
     this.nextStone = StoneType.reverse(this.nextStone);
+    this.cnt += 1;
   }
 
-  this.pass = function() {
-    this.changeStone();
-    this.cnt += 1;
+  this.setStone = function(x, y, stone) {
+    if (this.board.isOutOfRange(x, y))
+      return;
+    this.board.set(x, y, stone);
   }
 
   this.putStone = function(x, y) {
@@ -530,49 +532,27 @@ var IgoRuleEngine = function(size) {
   this.getWhiteHama = function() {
     return this.hama[StoneType.WHITE];
   }
-
 }
 
-var Goban = function(size) {
-  this.size = size;
-  this.rule = new IgoRuleEngine(size);
-  this.board = this.rule.board;
-
-  this.setStone = function(x, y, stone) {
-    this.board.set(x, y, stone);
-  }
-
-  this.putStone = function(x, y) {
-    return this.rule.putStone(x, y);
-  }
-
-  this.getStone = function(x, y) {
-    return this.board.get(x, y);
-  }
-
-  this.clear = function() {
-    this.rule.clear();
-  }
-
-  this.notify = function() {
-    if (this.changeEventListener)
-      this.changeEventListener();
-  }
-}
-
-var SgfProperty = function(propIdent) {
+var SgfProperty = function(propIdent, propValue) {
   this.propIdent = propIdent;
-  this.propValues = [];
-
-  this.addPropValue = function(propValue) {
-    this.propValues.push(propValue);
-  }
+  this.propValue = propValue;
 
   this.copy = function() {
-    var result = new SgfProperty(this.propIdent);
-    for (var i = 0; i < this.propValues.length; i++)
-      result.addPropValue(this.propValues[i]);
-    return result;
+    return new SgfProperty(this.propIdent, this.propValue);
+  }
+}
+
+var PropertyFactory = {
+  createMove: function(move) {
+    if (move.stone == StoneType.BLACK)
+      return new SgfProperty("B", move);
+    else if (move.stone == StoneType.WHITE)
+      return new SgfProperty("W", move);
+  },
+
+  createSetupMoves: function(moves) {
+    
   }
 }
 
@@ -721,62 +701,120 @@ var SgfGameCollection = function() {
   }
 }
 
-var GobanPlayer = function(size, newMoveTree) { 
-  this.goban = new Goban(size);
-  this.moveTree = newMoveTree ? newMoveTree : new SgfTree();
+var Move = function(x, y, stone) {
+  this.x = x;
+  this.y = y;
+  this.stone = stone;
+}
 
+var IgoPlayer = function(size) {
+  this.size = size;
+  this.rule = new IgoRuleEngine(size);
+  this.listeners = [];
+
+  this.sgfTree = new SgfTree();
+  
   this.putStone = function(x, y) {
-    var stone = this.goban.rule.nextStone;
-    if (this.goban.putStone(x, y)) {
-      this.moveTree.put(new Move(x, y, stone));
-      this.goban.notify();
+    var stone = this.rule.nextStone;
+    if (this.rule.putStone(x, y)) {
+      this.moveProperty(new Move(x, y, stone));
+      this.notify();
     }
+  }
+
+  this.setStones = function(moves) {
+    for (var i = 0; i < moves.length; i++)
+      this.rule.setStone(move.x, move.y, move.stone);
+    this.setupProperty(moves);
+    this.notify();
+  }
+
+  this.getStone = function() {
+    return this.rule.board.get();
+  }
+
+  this.setupProperty = function(moves) {
+// TODO//find existent
+    var blackMoves = [];
+    var whiteMoves = [];
+    for (var i = 0; i < moves.length; i++) {
+      var move = moves[i];
+      if (move.stone == StoneType.BLACK)
+        blackMoves.push(blackMoves);
+      if (move.stone == StoneType.WHITE)
+        whiteMoves.push(whiteMoves);
+    }
+    if (blackMoves.length > 0)
+      this.addProperty(new SgfProperty("AB", blackMoves));
+    if (whiteMoves.length > 0)
+      this.addProperty(new SgfProperty("AW", whiteMoves));
+  }
+
+  this.moveProperty = function(move) {
+    this.sgfTree.newChild();
+    this.addProperty(PropertyFactory.createMove(move));
+  }
+
+  this.addProperty = function(property) {
+    this.sgfTree.getCurrentNode().addProperty(property);
   }
 
   this.updateGoban = function() {
-    this.goban.clear();
-    var moves = this.moveTree.toSequence();
-    for (var i = 0; i < moves.length; i++) {
-      var move = moves[i];
-      if (move.stone != this.goban.rule.nextStone)
-        this.goban.rule.pass();
-      this.goban.putStone(move.x, move.y);
+    this.rule.clear();
+    var nodes = this.sgfTree.toSequence();
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      var move = getMoveFromSgfNode(node);
+      if (move) {
+        if (move.stone != this.rule.nextStone)
+          this.rule.pass();
+        this.rule.putStone(move.x, move.y);
+      }
     }
-    this.goban.notify();
+    this.notify();
   }
 
   this.back = function() {
-    if (this.moveTree.back())
+    if (this.sgfTree.back())
       this.updateGoban();
   }
 
   this.forward = function() {
-    if (this.moveTree.forward())
+    if (this.sgfTree.forward())
       this.updateGoban();
   }
 
   this.cut = function() {
-    if (this.moveTree.cut())
+    if (this.sgfTree.cut())
       this.updateGoban();
   }
 
-  this.isHead = function() {
+  this.isLeaf = function() {
     return !this.moveTree.current.hasChild();
   }
 
-  this.copy = function() {
-    var player = new GobanPlayer(this.goban.size, this.moveTree.copy());
-    player.updateGoban();
-    return player;
-  }
-
   this.pass = function() {
-    var stone = this.goban.rule.nextStone;
-    this.moveTree.put(new Move(-1, -1, stone));
-    this.goban.rule.pass();
+    var stone = this.rule.nextStone;
+    this.putMoveToTree(new Move(-1, -1, stone));
+    this.rule.pass();
     this.goban.notify();
   }
+
+  this.getMoveFromSgfNode = function() {
+    var node = this.sgfTree.getCurrentNode();
+    return node.findProperty("B") || node.findProperty("W");
+  }
+
+  this.addListener = function(listener) {
+    this.listeners.push(listener);
+  }
+
+  this.notify = function() {
+    for (var i = 0; i < this.listeners.length; i++)
+      listeners[i].notify();
+  }
 }
+
 
 var createDrawer = function(player, id) {
   var goban = player.goban;
@@ -794,5 +832,9 @@ var createDrawer = function(player, id) {
 module.exports = {
  SgfProperty: SgfProperty,
  SgfTree:     SgfTree,
- SgfProperty: SgfProperty
+ SgfProperty: SgfProperty,
+ Move: Move,
+ StoneType: StoneType,
+ IgoPlayer: IgoPlayer,
+ PropertyFactory: PropertyFactory
 }
