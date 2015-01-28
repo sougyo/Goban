@@ -124,7 +124,6 @@ var DrawerEnv = function(size, ctx) {
         throw e;
     }
   }
-
 }
 
 var GoDrawer = function(goban, canvasid, tree) {
@@ -534,66 +533,28 @@ var IgoRuleEngine = function(size) {
   }
 }
 
-var SgfProperty = function(propIdent, propValue) {
-  this.propIdent = propIdent;
-  this.propValue = propValue;
-
-  this.copy = function() {
-    return new SgfProperty(this.propIdent, this.propValue);
-  }
-}
-
-var PropertyFactory = {
-  createMove: function(move) {
-    if (move.stone == StoneType.BLACK)
-      return new SgfProperty("B", move);
-    else if (move.stone == StoneType.WHITE)
-      return new SgfProperty("W", move);
-  },
-
-  createSetupMoves: function(moves) {
-    
-  }
-}
-
 var SgfNode = function(parentNode) {
-  this.properties = [];
+  this.properties = {};
 
   this.parentNode = parentNode;
   this.children = [];
   this.childIndex = 0;
 
-  this.addProperty = function(property) {
-    if (!this.findProperty(property.propIdent))
-      this.properties.push(property);
+  this.setProperty = function(propIdent, propValue) {
+    this.properties[propIdent] = propValue;
   }
 
-  this.clearProperties = function () {
-    this.properties.clear();
-  }
-
-  this.findProperty = function(propIdent) {
-    for (var i = 0; i < this.properties.length; i++) {
-      var property = this.properties[i];
-      if (property.propIdent == propIdent)
-        return property;
-    }
-    return null;
+  this.getProperty = function(propIdent) {
+    return this.properties[propIdent];
   }
 
   this.removeProperty = function(propIdent) {
-    for (var i = 0; i < this.properties.length; i++) {
-      if (this.properties[i].propIdent == propIdent) {
-        this.properties.splice(i, 1);
-        return;
-      }
-    }
+    delete this.properties[propIdent];
   }
 
   this.copy = function(parentNode) {
     var result = new SgfNode(parentNode);
-    for (var i = 0; i < this.properties.length; i++)
-      result.addProperty(this.properties[i].copy());
+    result.properties = JSON.parse(JSON.stringify(this.properties));
     for (var i = 0; i < this.children.length; i++)
       result.addChild(this.children[i].copy(result));
     result.setChildIndex(this.childIndex);
@@ -629,6 +590,28 @@ var SgfNode = function(parentNode) {
       if (this.children[i].move.equals(move))
         return i;
     return null;
+  }
+
+  var propValue2str = function(propValue) {
+    if (!propValue)
+      return "";
+
+    if (!isArray(propValue))
+      propValue = [propValue];
+
+    var result = "";
+    for (var i = 0; i < propValue.length; i++)
+      result += "[" + propValue[i].toString() + "]";
+    return result;
+  }
+
+  this.toString = function() {
+    var result = ";";
+    for (ident in this.properties) {
+      result += ident;
+      result += propValue2str(this.properties[ident]);
+    }
+    return result;
   }
 }
 
@@ -691,20 +674,46 @@ var SgfTree = function() {
     return tree;
   }
 
+  this.toString = function() {
+    var result = "";
+    var nodes = this.toSequence();
+    for (var i = 0; i < nodes.length; i++)
+      result += nodes[i].toString();
+    return result;
+  }
 }
 
-var SgfGameCollection = function() {
-  this.gameTrees = [];
+var defaultParser = function(str) {
+  return str;
+}
 
-  this.addTree = function(gameTree) {
-    this.gameTrees.push(gameTree);
-  }
+var isArray = function(obj) {
+  return Object.prototype.toString.call(obj) === '[object Array]';
 }
 
 var Move = function(x, y, stone) {
   this.x = x;
   this.y = y;
   this.stone = stone;
+}
+
+var IgoPoint = function(x, y) {
+  this.x = x;
+  this.y = y;
+
+  this.toString = function() {
+    var strX = this.toChar(this.x);
+    var strY = this.toChar(this.y);
+    if (strX && strY)
+      return strX + strY;
+  }
+
+  this.toChar = function(x) {
+    if (0 <= x && x < 26)
+      return String.fromCharCode("a".charCodeAt() + x);
+    else if (26 <= x && x < 52)
+      return String.fromCharCode("A".charCodeAt() + x - 26);
+  }
 }
 
 var IgoPlayer = function(size) {
@@ -717,15 +726,14 @@ var IgoPlayer = function(size) {
   this.putStone = function(x, y) {
     var stone = this.rule.nextStone;
     if (this.rule.putStone(x, y)) {
-      this.moveProperty(new Move(x, y, stone));
+      this.addMoveProperty(x, y, stone);
       this.notify();
     }
   }
 
-  this.setStones = function(moves) {
-    for (var i = 0; i < moves.length; i++)
-      this.rule.setStone(move.x, move.y, move.stone);
-    this.setupProperty(moves);
+  this.setStone = function(x, y, stone) {
+    this.rule.setStone(x, y, stone);
+    this.addSetupProperty(x, y, stone);
     this.notify();
   }
 
@@ -733,30 +741,32 @@ var IgoPlayer = function(size) {
     return this.rule.board.get();
   }
 
-  this.setupProperty = function(moves) {
-// TODO//find existent
-    var blackMoves = [];
-    var whiteMoves = [];
-    for (var i = 0; i < moves.length; i++) {
-      var move = moves[i];
-      if (move.stone == StoneType.BLACK)
-        blackMoves.push(blackMoves);
-      if (move.stone == StoneType.WHITE)
-        whiteMoves.push(whiteMoves);
+  this.addMoveProperty = function(x, y, stone) {
+    var propIdent;
+    switch (stone) {
+      case StoneType.BLACK: propIdent = "B"; break;
+      case StoneType.WHITE: propIdent = "W"; break;
+      default: return;
     }
-    if (blackMoves.length > 0)
-      this.addProperty(new SgfProperty("AB", blackMoves));
-    if (whiteMoves.length > 0)
-      this.addProperty(new SgfProperty("AW", whiteMoves));
-  }
 
-  this.moveProperty = function(move) {
     this.sgfTree.newChild();
-    this.addProperty(PropertyFactory.createMove(move));
+    this.addProperty(propIdent, new IgoPoint(x, y));
   }
 
-  this.addProperty = function(property) {
-    this.sgfTree.getCurrentNode().addProperty(property);
+  this.addSetupProperty = function(x, y, stone) {
+    var propIdent;
+    switch (stone) {
+      case StoneType.BLACK: propIdent = "AB"; break;
+      case StoneType.WHITE: propIdent = "AW"; break;
+      case StoneType.NONE : propIdent = "AE"; break;
+      default: return;
+    }
+
+    this.addProperty(propIdent, new IgoPoint(x, y));
+  }
+
+  this.addProperty = function(propIdent, propValue) {
+    this.sgfTree.getCurrentNode().setProperty(propIdent, propValue);
   }
 
   this.updateGoban = function() {
@@ -764,7 +774,7 @@ var IgoPlayer = function(size) {
     var nodes = this.sgfTree.toSequence();
     for (var i = 0; i < nodes.length; i++) {
       var node = nodes[i];
-      var move = getMoveFromSgfNode(node);
+      var move = getMove(node);
       if (move) {
         if (move.stone != this.rule.nextStone)
           this.rule.pass();
@@ -772,6 +782,12 @@ var IgoPlayer = function(size) {
       }
     }
     this.notify();
+  }
+
+  this.getMove = function(node) {
+    var p;
+    if (p = node.getProperty("B")) return new Move(p.x, p.y, StoneType.BLACK);
+    if (p = node.getProperty("W")) return new Move(p.x, p.y, StoneType.WHITE);
   }
 
   this.back = function() {
@@ -800,11 +816,6 @@ var IgoPlayer = function(size) {
     this.goban.notify();
   }
 
-  this.getMoveFromSgfNode = function() {
-    var node = this.sgfTree.getCurrentNode();
-    return node.findProperty("B") || node.findProperty("W");
-  }
-
   this.addListener = function(listener) {
     this.listeners.push(listener);
   }
@@ -830,11 +841,10 @@ var createDrawer = function(player, id) {
 }
 
 module.exports = {
- SgfProperty: SgfProperty,
- SgfTree:     SgfTree,
- SgfProperty: SgfProperty,
- Move: Move,
+ SgfTree:   SgfTree,
+ Move:      Move,
  StoneType: StoneType,
+ SgfNode:   SgfNode,
  IgoPlayer: IgoPlayer,
- PropertyFactory: PropertyFactory
+ IgoPoint:  IgoPoint,
 }
