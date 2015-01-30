@@ -579,8 +579,10 @@ var SgfNode = function(parentNode) {
   }
 
   this.setChildIndex = function(i) {
-    if (0 <= i && i < this.children.length)
+    if (0 <= i && i < this.children.length) {
       this.childIndex = i;
+      return true;
+    }
   }
 
   this.getChild = function() {
@@ -588,6 +590,11 @@ var SgfNode = function(parentNode) {
       return this.children[this.childIndex];
   }
 
+  this.setChild = function(child) {
+    this.children[this.childIndex] = child;
+  }
+
+  // helper function for toString
   var propValue2str = function(propValue) {
     if (!propValue)
       return "";
@@ -624,8 +631,29 @@ var SgfTree = function() {
     this.current = this.current.getChild();
   }
 
+  this.insertNewNode = function() {
+    var cur = this.current;
+
+    if (cur.hasChild()) {
+      var node = new SgfNode(cur);
+      node.addChild(cur.getChild());
+      cur.setChild(node);
+      cur.getChild().parentNode = node;
+      this.current = this.current.getChild();
+    } else {
+      this.newChild();
+    }
+  }
+
   this.forward = function() {
     if (this.current.hasChild()) {
+      this.current = this.current.getChild();
+      return true;
+    }
+  }
+
+  this.forwardTo = function(index) {
+    if (this.current.setChildIndex(index)) {
       this.current = this.current.getChild();
       return true;
     }
@@ -679,10 +707,6 @@ var SgfTree = function() {
   }
 }
 
-var defaultParser = function(str) {
-  return str;
-}
-
 var isArray = function(obj) {
   return Object.prototype.toString.call(obj) === '[object Array]';
 }
@@ -712,24 +736,157 @@ var IgoPoint = function(x, y) {
   }
 }
 
+var PropUtil = function(tree) {
+  this.tree = tree;
+
+  this.moveDict = [
+    ["B",  StoneType.BLACK],
+    ["W",  StoneType.WHITE]
+  ];
+
+  this.setupDict = [
+    ["AB", StoneType.BLACK],
+    ["AW", StoneType.WHITE],
+    ["AE", StoneType.NONE ]
+  ];
+
+  this.addMoveProperty = function(x, y, stone) {
+    var childIndex = this.findMoveChildIndex(x, y, stone);
+
+    if (childIndex) {
+      this.tree.forwardTo(childIndex);
+    } else {
+      var propIdent = this.stone2ident(this.moveDict, stone);
+      if (propIdent) {
+        this.tree.newChild();
+        this.addPropertyToCurrent(propIdent, new IgoPoint(x, y));
+      }
+    }
+  }
+
+  this.addSetupProperty = function(x, y, stone) {
+    if (!this.currentHasProperty(this.setupDict))
+      this.tree.insertNewNode();
+
+    var propIdent = this.stone2ident(this.setupDict, stone);
+    if (propIdent) {
+      var node = this.currentNode();
+      this.removeSetupPointFromNode(node, x, y);
+      var propValue = node.getProperty(propIdent);
+      if (propValue)
+        propValue.push(new IgoPoint(x, y));
+      else
+        node.setProperty(propIdent, [new IgoPoint(x, y)]);
+    }
+  }
+
+  this.currentHasProperty = function(dict) {
+    for (var i = 0; i < dict.length; i++) {
+      var ident = dict[i][0];
+      if (this.currentNode().getProperty(ident))
+        return true;
+    }
+    return false;
+  }
+
+  this.stone2ident = function(dict, stone) {
+    for (var i = 0; i < dict.length; i++)
+      if (dict[i][1] == stone)
+        return dict[i][0];
+  }
+
+  this.ident2stone = function(dict, ident) {
+    for (var i = 0; i < dict.length; i++)
+      if (dict[i][0] == ident)
+        return dict[i][1];
+  }
+
+  this.getCurrentMove = function() {
+    var node = this.currentNode();
+    var pb = node.getProperty("B");
+    var pw = node.getProperty("W");
+
+    if (pb && pw)
+      return;
+
+    if (pb)
+      return new Move(p.x, p.y, StoneType.BLACK);
+    if (pw)
+      return new Move(p.x, p.y, StoneType.WHITE);
+  }
+
+  this.getCurrentSetupMoves = function() {
+    var node = this.currentNode();
+    var result = [];
+    for (var i = 0; i < this.setupDict.length; i++) {
+      var ident = this.setupDict[i][0];
+      var stone = this.setupDict[i][1];
+      var propVal = node.getProperty(ident);
+      if (!propVal)
+        continue;
+      for (var j = 0; j < propVal.length; j++) {
+        var p = propVal[j];
+        result.push(new Move(p.x, p.y, stone));
+      }
+    }
+    return result;
+  }
+
+  this.findMoveChildIndex =  function(x, y, stone) {
+    var children = this.currentNode().children;
+    for (var i = 0; i < children.length; i++) {
+      var val = children[i].getProperty(this.stone2ident(this.moveDict, stone));
+      if (val && val.x == x && val.y == y)
+        return i;
+    }
+    return null;
+  }
+
+  this.removeSetupPointFromNode = function(node, x, y) {
+    for (var i = 0; i < this.setupDict.length; i++) {
+      var ident = this.setupDict[0];
+      var stone = this.setupDict[1];
+      var propVal = node.getProperty(ident);
+      if (!propVal)
+        continue;
+      for (var j = 0; j < propVal.length; j++) {
+        var p = propVal[j];
+        if (p.x == x && p.y == y) {
+          propVal.splice(j, 1);
+          break;
+        }
+      }
+    }
+  }
+
+  this.currentNode = function() {
+    return this.tree.getCurrentNode();
+  }
+
+  this.addPropertyToCurrent = function(propIdent, propValue) {
+    this.currentNode().setProperty(propIdent, propValue);
+  }
+}
+
 var IgoPlayer = function(size) {
   this.size = size;
   this.rule = new IgoRuleEngine(size);
   this.listeners = [];
 
   this.sgfTree = new SgfTree();
+  this.propUtil = new PropUtil(this.sgfTree);
   
   this.putStone = function(x, y) {
     var stone = this.rule.nextStone;
     if (this.rule.putStone(x, y)) {
-      this.addMoveProperty(x, y, stone);
+      this.propUtil.addMoveProperty(x, y, stone);
       this.notify();
     }
   }
 
   this.setStone = function(x, y, stone) {
     if (this.rule.setStone(x, y, stone)) {
-      this.addSetupProperty(x, y, stone);
+      this.propUtil.addSetupProperty(x, y, stone);
       this.notify();
     }
   }
@@ -738,123 +895,26 @@ var IgoPlayer = function(size) {
     return this.rule.board.get();
   }
 
-  this.addMoveProperty = function(x, y, stone) {
-    var childIndex = this.findMoveChildIndex(x, y, stone);
-
-    if (childIndex) {
-      this.sgfTree.getCurrentNode().setChildIndex(childIndex);
-      this.sgfTree.forward();
-      return;
-    }
-
-    var propIdent = this.stone2moveIdent(stone);
-
-    this.sgfTree.newChild();
-    this.addProperty(propIdent, new IgoPoint(x, y));
-  }
-
-  this.findMoveChildIndex =  function(x, y, stone) {
-    var children = this.sgfTree.getCurrentNode().children;
-    for (var i = 0; i < children.length; i++) {
-      var val = children[i].getProperty(this.stone2moveIdent(stone));
-      if (val.x == x && val.y == y)
-        return i;
-    }
-    return null;
-  }
-
-  this.stone2moveIdent = function(stone) {
-    switch (stone) {
-      case StoneType.BLACK: return "B";
-      case StoneType.WHITE: return "W";
-      default: return;
-    }
-  }
-
-  this.stone2setupIdent = function(stone) {
-    switch (stone) {
-      case StoneType.BLACK: return "AB";
-      case StoneType.WHITE: return "AW";
-      case StoneType.NONE : return "AE";
-      default: return;
-    }
-  }
-
-  this.addSetupProperty = function(x, y, stone) {
-    if (!this.isSetupNode())
-      this.sgfTree.newChild();
-
-    var propIdent = this.stone2setupIdent(stone);
-    if (propIdent) {
-      var node = this.sgfTree.getCurrentNode();
-      this.removeSetupPointFromNode(node, x, y);
-      var val = node.getProperty(propIdent);
-      if (val)
-        val.push(new IgoPoint(x, y));
-      else
-        node.setProperty(propIdent, [new IgoPoint(x, y)]);
-    }
-  }
-
-  this.removeSetupPointFromNode = function(node, x, y) {
-    var ident_list = ["AB", "AW", "AE"];
-    for (var i = 0; i < ident_list.length; i++) {
-      var val = node.getProperty(ident_list[i]);
-      if (!val)
-        continue;
-      for (var j = 0; j < val.length; j++) {
-        if (val[j].x == x && val[j].y == y) {
-          val.splice(j, 1);
-          break;
-        }
-      }
-    }
-  }
-
-  this.addProperty = function(propIdent, propValue) {
-    this.sgfTree.getCurrentNode().setProperty(propIdent, propValue);
-  }
-
   this.updateGoban = function() {
     this.rule.clear();
     var nodes = this.sgfTree.toSequence();
     for (var i = 0; i < nodes.length; i++) {
       var node = nodes[i];
-      var move = getMove(node);
+      var move = this.propUtil.getCurrentMove();
       if (move) {
         if (move.stone != this.rule.nextStone)
           this.rule.pass();
         this.rule.putStone(move.x, move.y);
+        continue;
       }
-      this.setupMoves(node.getProperty("AB"), StoneType.BLACK);
-      this.setupMoves(node.getProperty("AW"), StoneType.WHITE);
-      this.setupMoves(node,getProperty("AE"), StoneType.NONE);
+
+      var moves = this.propUtil.getCurrentSetupMoves();
+      for (var i = 0; i < moves.length; i++) {
+        var move = moves[i];
+        this.rule.setStone(move.x, move.y, move.stone);
+      }
     }
     this.notify();
-  }
-
-  this.setupMoves = function(list, stone) {
-    if (!list)
-      return;
-    for (var i = 0; i < list.length; i++) {
-      var move = list[i];
-      this.rule.setStone(move.x, move,y, stone);
-    }
-  }
-
-  this.getMove = function(node) {
-    var p;
-    if (p = node.getProperty("B")) return new Move(p.x, p.y, StoneType.BLACK);
-    if (p = node.getProperty("W")) return new Move(p.x, p.y, StoneType.WHITE);
-  }
-
-  this.isSetupNode = function() {
-    var node = this.sgfTree.getCurrentNode();
-    if (node.getProperty("B") || node.getProperty("W"))
-      return false;
-    if (node.getProperty("AB") || node.getProperty("AW") || node.getProperty("AE"))
-      return true;
-    return false;
   }
 
   this.back = function() {
@@ -892,7 +952,6 @@ var IgoPlayer = function(size) {
       listeners[i].notify();
   }
 }
-
 
 var createDrawer = function(player, id) {
   var goban = player.goban;
