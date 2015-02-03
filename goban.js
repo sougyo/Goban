@@ -384,11 +384,11 @@ var Scanner = function(size) {
     this.board = board;
     this.scanableStone = scanableStone;
     this.abortStone = abortStone;
-    this._scan(x, y);
+    this.scan_helper(x, y);
     return this.scanTable;
   }
 
-  this._scan = function(x, y) {
+  this.scan_helper = function(x, y) {
     if (this.board.isOutOfRange(x, y))
       return;
     if (this.scanTable.isMarked(x, y))
@@ -399,10 +399,10 @@ var Scanner = function(size) {
       return;
     this.scanTable.mark(x, y);
 
-    this._scan(x + 1, y);
-    this._scan(x - 1, y);
-    this._scan(x, y - 1);
-    this._scan(x, y + 1);
+    this.scan_helper(x + 1, y);
+    this.scan_helper(x - 1, y);
+    this.scan_helper(x, y - 1);
+    this.scan_helper(x, y + 1);
   }
 }
 
@@ -413,31 +413,33 @@ var IgoRuleEngine = function(size) {
   this.board = new Board(size);
   this.tmpBoard = new Board(size);
 
+  this.resetKo = function() {
+    this.koX = null;
+    this.koY = null;
+  }
+
   this.clear = function() {
     this.nextStone = StoneType.BLACK;
     this.cnt = 0;
-    this.koX = null;
-    this.koY = null;
     this.hama = {}
     this.hama[StoneType.BLACK] = 0;
     this.hama[StoneType.WHITE] = 0;
+    this.resetKo();
     this.board.clear();
   }
   this.clear();
 
   this.pass = function() {
-    this.koX = null;
-    this.koY = null;
     this.nextStone = StoneType.reverse(this.nextStone);
     this.cnt += 1;
+    this.resetKo();
   }
 
   this.setStone = function(x, y, stone) {
     if (this.board.isOutOfRange(x, y))
       return;
     this.board.set(x, y, stone);
-    this.koX = null;
-    this.koY = null;
+    this.resetKo();
     return true;
   }
 
@@ -454,27 +456,27 @@ var IgoRuleEngine = function(size) {
     this.tmpBoard.set(x, y, stone);
 
     this.removeTable.clear();
-    this._mergeRemoveTable(x - 1, y, revStone);
-    this._mergeRemoveTable(x + 1, y, revStone);
-    this._mergeRemoveTable(x, y - 1, revStone);
-    this._mergeRemoveTable(x, y + 1, revStone);
+    this.mergeRemoveTable(x - 1, y, revStone);
+    this.mergeRemoveTable(x + 1, y, revStone);
+    this.mergeRemoveTable(x, y - 1, revStone);
+    this.mergeRemoveTable(x, y + 1, revStone);
 
     if (x == this.koX && y == this.koY && this.removeTable.count() == 1)
       return;
-    this._removeStones(this.removeTable);
+    this.removeStones(this.removeTable);
 
     if (this.scanner.scan(x, y, this.tmpBoard, stone, StoneType.NONE).isEnabled())
       return;
 
     this.board.copyFrom(this.tmpBoard);
-    this._updateKo();
+    this.updateKo();
     this.hama[stone] += this.removeTable.count();
     this.nextStone = revStone;
     this.cnt += 1;
     return true;
   }
 
-  this._mergeRemoveTable = function(x, y, stone) {
+  this.mergeRemoveTable = function(x, y, stone) {
     this.removeTable.merge(this.scanner.scan(x, y, this.tmpBoard, stone, StoneType.NONE)); 
   }
 
@@ -502,7 +504,7 @@ var IgoRuleEngine = function(size) {
     return this.getTerritory(stone).count() + this.hama[stone];
   }
 
-  this._removeStones = function(scannedTable) {
+  this.removeStones = function(scannedTable) {
     var sum = 0;
     for (var x = 0; x < this.size; x++)
       for (var y = 0; y < this.size; y++)
@@ -513,9 +515,8 @@ var IgoRuleEngine = function(size) {
         }
   }
  
-  this._updateKo = function() {
-    this.koX = null;
-    this.koY = null;
+  this.updateKo = function() {
+    this.resetKo();
     if (this.removeTable.count() != 1)
       return;
     for (var x = 0; x < this.size; x++)
@@ -561,7 +562,12 @@ var SgfNode = function(parentNode) {
 
   this.copy = function(parentNode) {
     var result = new SgfNode(parentNode);
-    result.properties = JSON.parse(JSON.stringify(this.properties));
+    for (var ident in this.properties) {
+      var prop = this.properties[ident];
+      result.properties[ident] = prop.hasOwnProperty("copy") ?
+                                   prop.copy() :
+                                   JSON.parse(JSON.stringify(prop));
+    }
     for (var i = 0; i < this.children.length; i++)
       result.addChild(this.children[i].copy(result));
     result.setChildIndex(this.childIndex);
@@ -736,6 +742,10 @@ var IgoPoint = function(x, y) {
     else if (26 <= x && x < 52)
       return String.fromCharCode("A".charCodeAt() + x - 26);
   }
+
+  this.copy = function() {
+    return new IgoPoint(this.x, this.y);
+  }
 }
 IgoPoint.PASS_X = -1;
 IgoPoint.PASS_Y = -1;
@@ -883,12 +893,12 @@ var PropUtil = function(tree) {
   }
 }
 
-var IgoPlayer = function(size) {
+var IgoPlayer = function(size, sgfTree) {
   this.size = size;
   this.rule = new IgoRuleEngine(size);
   this.listeners = [];
 
-  this.sgfTree = new SgfTree();
+  this.sgfTree = sgfTree ? sgfTree : new SgfTree();
   this.propUtil = new PropUtil(this.sgfTree);
   
   this.putStone = function(x, y) {
@@ -955,7 +965,7 @@ var IgoPlayer = function(size) {
     var stone = this.rule.nextStone;
     this.rule.pass();
     this.propUtil.addMoveProperty(IgoPoint.PASS_X, IgoPoint.PASS_Y, stone);
-    this.goban.notify();
+    this.notify();
   }
 
   this.addListener = function(listener) {
@@ -965,6 +975,12 @@ var IgoPlayer = function(size) {
   this.notify = function() {
     for (var i = 0; i < this.listeners.length; i++)
       listeners[i].notify();
+  }
+
+  this.copy = function() {
+    var player = new IgoPlayer(this.size, this.sgfTree.copy());
+    player.updateGoban();
+    return player;
   }
 }
 
