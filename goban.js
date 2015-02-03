@@ -435,6 +435,13 @@ var IgoRuleEngine = function(size) {
     this.resetKo();
   }
 
+  this.setNextStone = function(stone) {
+    if (StoneType.exists(stone) && stone != this.nextStone) {
+      this.resetKo();
+      this.nextStone = stone;
+    }
+  }
+
   this.setStone = function(x, y, stone) {
     if (this.board.isOutOfRange(x, y))
       return;
@@ -728,12 +735,13 @@ var IgoPoint = function(x, y) {
   this.y = y;
 
   this.toString = function() {
-    if (this.x == IgoPoint.PASS_X && this.y == IgoPoint.PASS_Y)
-      return ""
-    var strX = this.toChar(this.x);
-    var strY = this.toChar(this.y);
-    if (strX && strY)
-      return strX + strY;
+    if (this.x >= 0 && this.y >= 0) {
+      var strX = this.toChar(this.x);
+      var strY = this.toChar(this.y);
+      if (strX && strY)
+        return strX + strY;
+    }
+    return ""
   }
 
   this.toChar = function(x) {
@@ -747,8 +755,6 @@ var IgoPoint = function(x, y) {
     return new IgoPoint(this.x, this.y);
   }
 }
-IgoPoint.PASS_X = -1;
-IgoPoint.PASS_Y = -1;
 
 var PropUtil = function(tree) {
   this.tree = tree;
@@ -927,16 +933,15 @@ var IgoPlayer = function(size, sgfTree) {
       var node = nodes[i];
       var move = this.propUtil.getMoveFrom(node);
       if (move) {
-        if (move.stone != this.rule.nextStone)
-          this.rule.pass();
+        this.rule.setNextStone(move.stone);
         this.rule.putStone(move.x, move.y);
-        continue;
       }
-
-      var moves = this.propUtil.getSetupMovesFrom(this.sgfTree.current);
-      for (var j = 0; j < moves.length; j++) {
-        var move = moves[j];
-        this.rule.setStone(move.x, move.y, move.stone);
+      var moves = this.propUtil.getSetupMovesFrom(node);
+      if (moves) {
+        for (var j = 0; j < moves.length; j++) {
+          var move = moves[j];
+          this.rule.setStone(move.x, move.y, move.stone);
+        }
       }
     }
     this.notify();
@@ -964,7 +969,7 @@ var IgoPlayer = function(size, sgfTree) {
   this.pass = function() {
     var stone = this.rule.nextStone;
     this.rule.pass();
-    this.propUtil.addMoveProperty(IgoPoint.PASS_X, IgoPoint.PASS_Y, stone);
+    this.propUtil.addMoveProperty(-1, -1, stone);
     this.notify();
   }
 
