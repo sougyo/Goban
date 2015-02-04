@@ -126,14 +126,14 @@ var DrawerEnv = function(size, ctx) {
   }
 }
 
-var GoDrawer = function(goban, canvasid, tree) {
+var GoDrawer = function(player, canvasid) {
   this.canvas = document.getElementById(canvasid);
+  this.player = player;
   if ( ! this.canvas || ! this.canvas.getContext )
     return;
 
-  this.tree = tree; //should be removed later
-  this.goban = goban;
-  this.env = new DrawerEnv(this.goban.size, this.canvas.getContext('2d'));
+  this.tree = player.sgfTree; //should be removed later
+  this.env = new DrawerEnv(this.player.size, this.canvas.getContext('2d'));
 
   var drawer = this;
   this.createImage = function(path) {
@@ -204,12 +204,14 @@ var GoDrawer = function(goban, canvasid, tree) {
     var nodes = this.tree.current.children;
     if (nodes.length < 2)
       return;
-
     var pointSize = env.hgrid / 2;
     env.ctx.fillStyle = 'pink';
+    var stone = this.player.rule.nextStone;
     for (var i = 0; i < nodes.length; i++) {
-      var move = nodes[i].move;
-      env.drawBoardCircle(move.x, move.y, pointSize, true);
+      var node = nodes[i];
+      var move = this.player.propUtil.getMoveFrom(node);
+      if (move.stone == stone)
+        env.drawBoardCircle(move.x, move.y, pointSize, true);
     }
   }
 
@@ -224,7 +226,7 @@ var GoDrawer = function(goban, canvasid, tree) {
     ctx.globalAlpha = 0.2;
     for (var x = 0; x < size; x++)
       for (var y = 0; y < size; y++)
-        if (StoneType.exists(this.goban.getStone(x, y)))
+        if (StoneType.exists(this.player.getStone(x, y)))
           env.drawBoardCircle(x, y, shadowSize, true, -offset, offset);
 
     ctx.globalAlpha = save;
@@ -236,7 +238,7 @@ var GoDrawer = function(goban, canvasid, tree) {
     var ctx = env.ctx;
     for (var x = 0; x < size; x++) {
       for (var y = 0; y < size; y++) {
-        var stone = this.goban.getStone(x, y);
+        var stone = this.player.getStone(x, y);
         if (StoneType.exists(stone)) {
           color = stone == StoneType.BLACK ? 'black' : 'rgb(210, 210, 210)';
           ctx.fillStyle = color;
@@ -253,7 +255,7 @@ var GoDrawer = function(goban, canvasid, tree) {
 
     for (var x = 0; x < size; x++) {
       for (var y = 0; y < size; y++) {
-        var stone = this.goban.getStone(x, y);
+        var stone = this.player.getStone(x, y);
         if (StoneType.exists(stone)) {
           var img = stone == StoneType.BLACK ? this.blackImg : this.whiteImg;
           env.drawImage(img, x, y, env.grid - 2);
@@ -269,9 +271,9 @@ var GoDrawer = function(goban, canvasid, tree) {
     var y = env.paddingTop + env.boardAreaHeight + 5;
     ctx.fillStyle = "black";
     ctx.font = "14pt Arial";
-    ctx.fillText("Cnt: "   + this.goban.rule.cnt, 20, y);
-    ctx.fillText("Black: " + this.goban.rule.getBlackHama(), 100, y);
-    ctx.fillText("White: " + this.goban.rule.getWhiteHama(), 200, y);
+    ctx.fillText("Cnt: "   + this.player.rule.cnt, 20, y);
+    ctx.fillText("Black: " + this.player.rule.getBlackHama(), 100, y);
+    ctx.fillText("White: " + this.player.rule.getWhiteHama(), 200, y);
   }
 
   this.draw = function() {
@@ -979,7 +981,7 @@ var IgoPlayer = function(size, sgfTree) {
 
   this.notify = function() {
     for (var i = 0; i < this.listeners.length; i++)
-      listeners[i].notify();
+      this.listeners[i]();
   }
 
   this.copy = function() {
@@ -990,18 +992,18 @@ var IgoPlayer = function(size, sgfTree) {
 }
 
 var createDrawer = function(player, id) {
-  var goban = player.goban;
-  var drawer = new GoDrawer(goban, id, player.moveTree);
+  var drawer = new GoDrawer(player, id);
 
-  goban.changeEventListener = function() {
+  player.addListener(function() {
     drawer.draw();
-  }
+  });
   drawer.clickEventListener = function(x, y) {
     player.putStone(x, y);
   }
   return drawer;
 }
 
+/*
 module.exports = {
  SgfTree:   SgfTree,
  Move:      Move,
@@ -1010,3 +1012,4 @@ module.exports = {
  IgoPlayer: IgoPlayer,
  IgoPoint:  IgoPoint,
 }
+*/
