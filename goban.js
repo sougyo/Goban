@@ -60,6 +60,9 @@ var Board = function(size) {
 }
 
 var DrawerEnv = function(size, ctx) {
+  if (!ctx)
+    return;
+
   this.size = size;
   this.ctx = ctx;
 
@@ -86,11 +89,11 @@ var DrawerEnv = function(size, ctx) {
   }
 
   this.toX = function(x) {
-    return this.grid * x + this.hgrid;
+    return this.grid * x + this.hgrid + this.xOffset;
   }
 
   this.toY = function(y) {
-    return this.grid * y + this.hgrid;
+    return this.grid * y + this.hgrid + this.yOffset;
   }
 
   this.drawBoardCircle = function(x, y, r, fill, dx, dy) {
@@ -128,12 +131,13 @@ var DrawerEnv = function(size, ctx) {
 
 var GoDrawer = function(player, canvasid) {
   this.canvas = document.getElementById(canvasid);
-  this.player = player;
-  if ( ! this.canvas || ! this.canvas.getContext )
+  if (!this.canvas || !this.canvas.getContext)
     return;
-
-  this.tree = player.sgfTree; //should be removed later
+  this.player = player;
+  this.tree = player.sgfTree;
   this.env = new DrawerEnv(this.player.size, this.canvas.getContext('2d'));
+  if (!this.env)
+    return;
 
   var drawer = this;
   this.createImage = function(path) {
@@ -156,7 +160,6 @@ var GoDrawer = function(player, canvasid) {
 
   this.drawBackground = function(env) {
     env.ctx.fillStyle = 'rgb(210, 180, 140)';
-    //env.ctx.fillStyle = 'rgb(189, 183, 107)';
     env.ctx.fillRect(0, 0, env.canvasWidth, env.canvasHeight);
     env.ctx.drawImage(drawer.woodImg, env.xOffset, env.yOffset, env.boardSize, env.boardSize);
   }
@@ -265,23 +268,22 @@ var GoDrawer = function(player, canvasid) {
   }
 
   this.drawHama = function(env) {
-    if (env.paddingBottom < 10)
+    if (env.paddingBottom < 20)
       return;
     var ctx = env.ctx;
-    var y = env.paddingTop + env.boardAreaHeight + 5;
+    var y = env.paddingTop + env.boardAreaHeight + 25;
+    var basex = env.xOffset + 5;
     ctx.fillStyle = "black";
     ctx.font = "14pt Arial";
-    ctx.fillText("Cnt: "   + this.player.rule.cnt, 20, y);
-    ctx.fillText("Black: " + this.player.rule.getBlackHama(), 100, y);
-    ctx.fillText("White: " + this.player.rule.getWhiteHama(), 200, y);
+    ctx.fillText("Cnt: "   + this.player.rule.cnt, basex + 0, y);
+    ctx.fillText("Black: " + this.player.rule.getBlackHama(), basex + 80, y);
+    ctx.fillText("White: " + this.player.rule.getWhiteHama(), basex + 160, y);
   }
 
   this.draw = function() {
     var env = this.env;
     this.drawBackground(env);
 
-    env.ctx.save();
-    env.ctx.translate(env.xOffset, env.yOffset);
     this.drawBoard(env);
     this.drawPoint(env);
     this.drawShadow(env);
@@ -289,7 +291,6 @@ var GoDrawer = function(player, canvasid) {
     this.drawStoneImage(env);
     this.drawHama(env);
     this.drawChildren(env);
-    env.ctx.restore();
   }
 
 
@@ -386,11 +387,11 @@ var Scanner = function(size) {
     this.board = board;
     this.scanableStone = scanableStone;
     this.abortStone = abortStone;
-    this.scan_helper(x, y);
+    this.scanRecursively(x, y);
     return this.scanTable;
   }
 
-  this.scan_helper = function(x, y) {
+  this.scanRecursively = function(x, y) {
     if (this.board.isOutOfRange(x, y))
       return;
     if (this.scanTable.isMarked(x, y))
@@ -401,10 +402,10 @@ var Scanner = function(size) {
       return;
     this.scanTable.mark(x, y);
 
-    this.scan_helper(x + 1, y);
-    this.scan_helper(x - 1, y);
-    this.scan_helper(x, y - 1);
-    this.scan_helper(x, y + 1);
+    this.scanRecursively(x + 1, y);
+    this.scanRecursively(x - 1, y);
+    this.scanRecursively(x, y - 1);
+    this.scanRecursively(x, y + 1);
   }
 }
 
@@ -1003,13 +1004,14 @@ var createDrawer = function(player, id) {
   return drawer;
 }
 
-/*
-module.exports = {
- SgfTree:   SgfTree,
- Move:      Move,
- StoneType: StoneType,
- SgfNode:   SgfNode,
- IgoPlayer: IgoPlayer,
- IgoPoint:  IgoPoint,
+if (typeof(module) != "undefined") {
+  module.exports = {
+   SgfTree:   SgfTree,
+   Move:      Move,
+   StoneType: StoneType,
+   SgfNode:   SgfNode,
+   IgoPlayer: IgoPlayer,
+   IgoPoint:  IgoPoint,
+  }
 }
-*/
+
