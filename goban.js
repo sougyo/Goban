@@ -149,9 +149,9 @@ var GoDrawer = function(player, canvasid) {
     return img;
   }
 
-  this.blackImg = this.createImage("../images/black.png");
-  this.whiteImg = this.createImage("../images/white.png");
-  this.woodImg  = this.createImage("../images/wood.png");
+  this.blackImg = this.createImage("images/black.png");
+  this.whiteImg = this.createImage("images/white.png");
+  this.woodImg  = this.createImage("images/wood.png");
 
   this.resize = function() {
     this.env.resize($(this.canvas).width(), $(this.canvas).height());
@@ -159,7 +159,8 @@ var GoDrawer = function(player, canvasid) {
   }
 
   this.drawBackground = function(env) {
-    env.ctx.fillStyle = 'rgb(210, 180, 140)';
+    //env.ctx.fillStyle = 'rgb(210, 180, 140)';
+    env.ctx.fillStyle = 'rgb(252, 247, 242)';
     env.ctx.fillRect(0, 0, env.canvasWidth, env.canvasHeight);
     env.ctx.drawImage(drawer.woodImg, env.xOffset, env.yOffset, env.boardSize, env.boardSize);
   }
