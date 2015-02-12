@@ -548,6 +548,101 @@ var IgoRuleEngine = function(size) {
   }
 }
 
+var SgfReader = function() {
+  this.LeftParenthes  = 1;
+  this.RightParenthes = 2;
+  this.Semicolon      = 3;
+  this.UcWord         = 4;
+  this.BracketBlock   = 5;
+
+  this.Token = function(type, data) {
+    this.type = type;
+    this.data = data;
+  }
+
+  this.readSgf = function(str) {
+    this.rest = str;
+    var tree = new SgfTree();
+
+    readSgfTree(tree.root);
+  }
+
+  this.consumeToken = function(type) {
+    var token = nextToken();
+    if (token.type != type)
+      throw new Error("consume error");
+  }
+
+  this.readSgfTree = function(parentNode) {
+    this.consumeToken(this.LeftParenthes);
+
+    var lastNode = readNodeSequence(parentNode);
+    while (child = readSgfTree(node))
+      lastNode.addChild(child);
+
+    this.consumeToken(this.RightParenthes);
+  }
+
+  this.readNodeSequence = function(parentNode) {
+    var node;
+    while(node = readNode(parentNode))
+      parentNode = node;
+    return parentNode;
+  }
+
+  this.readTokenByType = function(type) {
+    token = this.nextToken();
+    if (token.type == type)
+      return token.data;
+    this.push(token);
+    return;
+  }
+
+  this.readNode = function(parentNode) {
+    var node = new SgfNode(parentNode);
+    this.consumeToken(this.Semicolon);
+
+    while (ident = readTokenByType(this.UcWord)) {
+      var blocks = [];
+      while(block = readTokenByType(this.BracketBlock))
+        blocks << block;
+
+      node.setProperty(ident, blocks);
+    }
+    return node;
+  }
+
+  this.headToken = null;
+  this.push = function(token) {
+    this.headToken = token;
+  }
+
+  this.nextToken = function() {
+    if (this.headToken) {
+      var token = this.headToken;
+      this.headToken = null;
+      return token;
+    }
+
+    var str = this.rest;
+    str = this.skipSpace(str);
+    
+    switch (str[0]) {
+      case '(': return new Token(this.LeftParenthes, null);
+      case ')': return new Token(this.RightParenthes, null);
+      case ';': return new Token(this.Semicolon, null);
+      case '[': return;
+      default: return;
+
+    }
+  }
+
+  this.skipSpace = function(str) {
+    start = str.match(/[^\s]/);
+    return (start == -1) ? "" : str.substr(start);
+  }
+}
+
 var SgfNode = function(parentNode) {
   this.properties = {};
 
