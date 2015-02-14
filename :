@@ -563,8 +563,8 @@ var SgfReader = function() {
   this.readSgf = function(str) {
     this.rest = str;
     var tree = new SgfTree();
+
     this.readSgfTree(tree.root);
-    tree.resetIndexes();
     return tree;
   }
 
@@ -572,40 +572,37 @@ var SgfReader = function() {
     if (!this.readTokenByType(this.LeftParenthes))
       return;
 
-    var nodes = this.readNodeSequence(parentNode);
-    if (nodes.length > 0)
-      while (this.readSgfTree(nodes[nodes.length - 1]));
+    var lastNode = this.readNodeSequence(parentNode);
+    var child;
+    while (child = this.readSgfTree(lastNode))
+      lastNode.addChild(child);
 
     this.consumeToken(this.RightParenthes);
-    return true;
   }
 
   this.consumeToken = function(type) {
     var token = this.nextToken();
     if (token.type != type)
-      throw new Error("consume error actual:" + token.type + " expected:" + type + " rest:" + this.rest);
+      throw new Error("consume error actual:" + token.type + " expected:" + type);
   }
 
   this.readNodeSequence = function(parentNode) {
-    var nodes = []
     var node;
-    while(node = this.readNode(parentNode)) {
-      nodes.push(node);
+    while(node = this.readNode(parentNode))
       parentNode = node;
-    }
-    
-    return nodes;
+    return parentNode;
   }
 
   this.readNode = function(parentNode) {
-    if (!this.readTokenByType(this.Semicolon))
+    if (this.readTokenByType(this.Semicolon) == undefined)
       return;
+console.log("hoge");
     var node = new SgfNode(parentNode);
-    parentNode.addChild(node);
     while (ident = this.readTokenByType(this.UcWord)) {
       var blocks = [];
       while(block = this.readTokenByType(this.BracketBlock))
-        blocks.push(block);
+        blocks << block;
+
       node.setProperty(ident, blocks);
     }
     return node;
@@ -737,10 +734,6 @@ var SgfNode = function(parentNode) {
       return this.children[this.childIndex];
   }
 
-  this.getChildAt = function(index) {
-    return this.children[index];
-  }
-
   this.setChild = function(child) {
     this.children[this.childIndex] = child;
   }
@@ -851,22 +844,6 @@ var SgfTree = function() {
     for (var i = 0; i < nodes.length; i++)
       result += nodes[i].toString();
     return result;
-  }
-
-  this.resetIndexes = function() {
-    this.current = this.root;
-    this.resetIndexesHelper(this.root);
-  }
-
-  this.resetIndexesHelper = function(node) {
-    node.setChildIndex(0);
-    var children = node.children;
-    for (var i = 0; i < children.length; i++) {
-      var child = children[i];
-      if (child.parentNode != node)
-        throw new ("detect invalid link");
-      this.resetIndexesHelper(child);
-    }
   }
 }
 
