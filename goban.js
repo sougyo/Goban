@@ -606,7 +606,9 @@ var SgfReader = function() {
       var blocks = [];
       while(block = this.readTokenByType(this.BracketBlock))
         blocks.push(block);
-      node.setProperty(ident, blocks);
+      
+      parser = SgfParser[ident];
+      node.setProperty(ident, parser ? parser(blocks) : blocks);
     }
     return node;
   }
@@ -905,6 +907,47 @@ var IgoPoint = function(x, y) {
     return new IgoPoint(this.x, this.y);
   }
 }
+
+var SgfParser = function() {
+  var parseIgoPointX = function(c) {
+    if (c.match(/^[a-z]$/))
+      return c.charCodeAt() - "a".charCodeAt();
+
+    if (c.match(/^[A-Z]$/))
+      return c.charCodeAt() - "A".charCodeAt() + 26;
+  }
+
+  var parseIgoPoint = function(str) {
+    if (str.match(/^[a-zA-Z][a-zA-Z]$/)) {
+      var x = parseIgoPointX(str[0]);
+      var y = parseIgoPointX(str[1]); 
+      if (x >= 0 && y >= 0) return new IgoPoint(x, y);
+    }
+  }
+
+  var justOneIgoPoint = function(blocks) {
+    if (blocks.length == 1)
+      return parseIgoPoint(blocks[0]);
+  }
+
+  var manyIgoPoint = function(blocks) {
+    var result = [];
+    for (var i = 0; i < blocks.length; i++) {
+      var p = parseIgoPoint(blocks[i]);
+      if (p)
+        result.push(p);
+    }
+    return result;
+  }
+
+  return {
+    B:  justOneIgoPoint,
+    W:  justOneIgoPoint,
+    AB: manyIgoPoint,
+    AW: manyIgoPoint,
+    AE: manyIgoPoint,
+  };
+}();
 
 var PropUtil = function(tree) {
   this.tree = tree;
