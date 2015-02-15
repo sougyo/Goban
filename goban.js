@@ -549,6 +549,7 @@ var IgoRuleEngine = function(size) {
 }
 
 var SgfReader = function() {
+  this.Eof            = 0;
   this.LeftParenthes  = 1;
   this.RightParenthes = 2;
   this.Semicolon      = 3;
@@ -565,18 +566,24 @@ var SgfReader = function() {
     this.pos  = 0;
 
     var tree = new SgfTree();
-    this.readSgfTree(tree.root);
+    this.readCollection(tree.root);
     tree.resetIndexes();
     return tree;
   }
 
-  this.readSgfTree = function(parentNode) {
+  this.readCollection = function(parentNode) {
+    while (this.readGameTree(parentNode));
+  }
+
+  this.readGameTree = function(parentNode) {
     if (!this.readTokenByType(this.LeftParenthes))
       return;
 
     var nodes = this.readNodeSequence(parentNode);
-    if (nodes.length > 0)
-      while (this.readSgfTree(nodes[nodes.length - 1]));
+    if (nodes.length == 0)
+      this.parseError();
+
+    this.readCollection(nodes[nodes.length - 1]);
 
     this.consumeToken(this.RightParenthes);
     return true;
@@ -584,11 +591,9 @@ var SgfReader = function() {
 
   this.readNodeSequence = function(parentNode) {
     var nodes = []
-    var node;
-    while(node = this.readNode(parentNode)) {
+    var node = parentNode;
+    while(node = this.readNode(node))
       nodes.push(node);
-      parentNode = node;
-    }
     return nodes;
   }
 
@@ -617,8 +622,9 @@ var SgfReader = function() {
 
     if (token.type == type)
       return token.data;
-    else
-      this.pushToken(token);
+
+    if (token.type != this.Eof)
+      this.cacheToken(token);
   }
 
   this.consumeToken = function(type) {
@@ -627,20 +633,23 @@ var SgfReader = function() {
       throw new Error("consume error actual:" + token.type + " expected: " + type + " at:" + this.pos);
   }
 
-  this.headToken = null;
-  this.pushToken = function(token) {
-    this.headToken = token;
+  this.cache = null;
+  this.cacheToken = function(token) {
+    this.cache = token;
   }
 
   this.nextToken = function() {
-    if (this.headToken) {
-      var token = this.headToken;
-      this.headToken = null;
-      return token;
+    if (this.cache) {
+      var ret = this.cache;
+      this.cache = null;
+      return ret;
     }
 
     this.skipSpace();
     
+    if (!this.rest[0])
+      return new this.Token(this.Eof, true);
+
     switch (this.rest[0]) {
       case '(':
         this.nextPos(1);
@@ -652,24 +661,22 @@ var SgfReader = function() {
         this.nextPos(1);
         return new this.Token(this.Semicolon, true);
       case '[':
-        var pos = 0;
+        var p = 0;
         while (true) {
-          pos = this.rest.indexOf("]", pos + 1);
-          if (pos == -1)
+          p = this.rest.indexOf("]", p + 1);
+          if (p == -1)
             this.parseError();
-          if (this.rest[pos - 1] != '\\')
+          if (this.rest[p - 1] != '\\')
             break;
         }
-        var block = this.rest.substring(1, pos);
-        this.nextPos(pos + 1);
+        var block = this.nextPos(p + 1).slice(1, -1);
         return new this.Token(this.BracketBlock, block);
       default:
         var tmp = this.rest.match(/[^A-Z]/);
         if (!tmp || tmp.index == 0)
           this.parseError();
 
-        var ident = this.rest.substring(0, tmp.index);
-        this.nextPos(tmp.index);
+        var ident = this.nextPos(tmp.index);
         return new this.Token(this.UcWord, ident);
     }
   }
@@ -681,10 +688,13 @@ var SgfReader = function() {
   }
 
   this.nextPos = function(n) {
-    if (n > 0) {
-      this.pos += n;
-      this.rest = this.rest.substr(n);
-    }
+    if (!n)
+      return ""
+
+    var ret = this.rest.substr(0, n);
+    this.rest = this.rest.substr(n);
+    this.pos += n;
+    return ret;
   }
 
   this.parseError = function() {
