@@ -562,7 +562,7 @@ var SgfReader = function() {
   }
 
   this.readSgf = function(str) {
-    this.rest = str;
+    this.rest = str.replace(/\s+$/, "");
     this.pos  = 0;
 
     var tree = new SgfTree();
@@ -1194,9 +1194,19 @@ var IgoPlayer = function(size, sgfTree) {
       this.updateGoban();
   }
 
+  this.back_n = function(n) {
+    for (var i = 0; i < n && this.sgfTree.back(); i++);
+    this.updateGoban();
+  }
+
   this.forward = function() {
     if (this.sgfTree.forward())
       this.updateGoban();
+  }
+
+  this.forward_n = function(n) {
+    for (var i = 0; i < n && this.sgfTree.forward(); i++);
+    this.updateGoban();
   }
 
   this.cut = function() {
