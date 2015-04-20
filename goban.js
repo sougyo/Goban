@@ -12,6 +12,10 @@ var StoneType = {
   }
 };
 
+var isArray = function(obj) {
+  return Object.prototype.toString.call(obj) === '[object Array]';
+}
+
 var Board = function(size) {
   this.size = size;
   this.board = new Array(size);
@@ -57,313 +61,6 @@ var Board = function(size) {
   }
 
   this.clear();
-}
-
-var DrawerEnv = function(size, ctx) {
-  this.size = size;
-  this.ctx  = ctx;
-
-  this.paddingTop    = 10;
-  this.paddingBottom = 50;
-  this.paddingLeft   = 20;
-  this.paddingRight  = 20;
-
-  this.resize = function(width, height) {
-    this.canvasWidth  = width;
-    this.canvasHeight = height;
-
-    this.boardAreaWidth  = this.canvasWidth  - this.paddingLeft - this.paddingRight;
-    this.boardAreaHeight = this.canvasHeight - this.paddingTop  - this.paddingBottom;
-    this.hgrid = Math.floor(Math.min(this.boardAreaWidth, this.boardAreaHeight) / (2 * this.size));
-    this.grid  = this.hgrid * 2;
-    this.boardSize = this.grid * this.size;
-
-    this.xOffset = (this.boardAreaWidth  - this.boardSize) / 2 + this.paddingLeft;
-    this.yOffset = (this.boardAreaHeight - this.boardSize) / 2 + this.paddingTop;
-
-    this.ctx.canvas.width  = this.canvasWidth;
-    this.ctx.canvas.height = this.canvasHeight;
-  }
-
-  this.drawLine = function(x1, y1, x2, y2) {
-    var ctx = this.ctx;
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-  }
-
-  this.drawCircle = function(x, y, r, fill) {
-    var ctx = this.ctx;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI*2, false);
-    if (fill)
-      ctx.fill();
-    else
-      ctx.stroke();
-  }
-
-  this.drawImage = function(image, x, y, width, height) {
-    try {
-      this.ctx.drawImage(image, x, y, width, height);
-    } catch (e) {
-      if (e.name != "NS_ERROR_NOT_AVAILABLE")
-      throw e;
-    }
-  }
-
-  this.toX = function(i) {
-    return this.grid * i + this.hgrid + this.xOffset;
-  }
-
-  this.toY = function(j) {
-    return this.grid * j + this.hgrid + this.yOffset;
-  }
-}
-
-var GoDrawer = function(size, ctx) {
-  this.handlers = [];
-  this.env = new DrawerEnv(size, ctx);
-
-  this.addDrawHandler = function(handler) {
-    this.handlers.push(handler);
-  }
-
-  this.resize = function(width, height) {
-    this.env.resize(width, height);
-    this.draw();
-  }
-
-  this.draw = function() {
-    for (var i = 0; i < this.handlers.length; i++) {
-      var handler = this.handlers[i];
-      if (handler.draw) {
-        this.env.ctx.save();
-        handler.draw(this.env);
-        this.env.ctx.restore();
-      }
-    }
-  }
-
-  this.handleMouseEvent = function(e) {
-    if (this.clickEventListener) {
-      var grid = this.env.grid;
-      var rect = e.target.getBoundingClientRect();
-      var x = e.clientX - rect.left - this.env.xOffset;
-      var y = e.clientY - rect.top  - this.env.yOffset;
-      var x = Math.floor(x / grid);
-      var y = Math.floor(y / grid);
-      this.clickEventListener(x, y);
-    }
-  }
-
-  this.clickEventHandler = function(e) {
-    var upX = e.clientX;
-    var upY = e.clientY;
-    var downX = this.env.downX;
-    var downY = this.env.downY;
-    if (Math.sqrt(Math.pow((upX - downX), 2) + Math.pow((upY - downY), 2) < this.env.hgrid)) {
-      this.handleMouseEvent(e);
-    }
-  }
-
-  this.mousedownEventHandler = function(e) {
-    this.env.downX = e.clientX;
-    this.env.downY = e.clientY;
-  }
-}
-
-var DefaultGoDrawerFactory = function() {
-
-  var BackgroundDrawer = function(option) {
-    var bgColor  = option.shouldGet("bgColor");
-    var boardImg = option.shouldGet("boardImg");
-
-    this.draw = function(env) {
-      env.ctx.fillStyle = bgColor;
-      env.ctx.fillRect(0, 0, env.canvasWidth, env.canvasHeight);
-      env.ctx.drawImage(boardImg, env.xOffset, env.yOffset, env.boardSize, env.boardSize);
-    }
-  }
-
-  var GridDrawer = function(option) {
-    var lineWidth = option.shouldGet("lineWidth");
-    var lineColor = option.shouldGet("lineColor");
-
-    this.draw = function(env) {
-      this.drawLine(env);
-      this.drawPoint(env);
-    }
-
-    this.drawLine = function(env) {
-      var size = env.size;
-      env.ctx.lineWidth   = Number(lineWidth);
-      env.ctx.strokeStyle = lineColor;
-      for (var i = 0; i < size; i++) {
-        env.drawLine(env.toX(0), env.toY(i), env.toX(size - 1), env.toY(i));
-        env.drawLine(env.toX(i), env.toY(0), env.toX(i), env.toY(size - 1));
-      }
-    }
-
-    this.drawPoint = function(env) {
-      var size = env.size;
-      var lpos = 3;
-      var rpos = size - lpos - 1;
-      var hpos = Math.floor(size / 2);
-
-      var points = [];
-      if (size > 10) {
-        points.push([lpos, lpos]);
-        points.push([rpos, lpos]);
-        points.push([lpos, rpos]);
-        points.push([rpos, rpos]);
-      }
-      if ((size % 2 == 1) && size >= 19) {
-        points.push([hpos, hpos]);
-        points.push([lpos, hpos]);
-        points.push([hpos, lpos]);
-        points.push([rpos, hpos]);
-        points.push([hpos, rpos]);
-      }
-
-      var pointSize = env.hgrid / 4;
-      env.ctx.fillStyle = 'black';
-      for (var i = 0; i < points.length; i++) {
-        var p = points[i];
-        env.drawCircle(env.toX(p[0]), env.toY(p[1]), pointSize, true);
-      }
-    }
-  }
-
-  var StoneDrawer = function(option, player) {
-    var blackImg = option.shouldGet("blackImg");
-    var whiteImg = option.shouldGet("whiteImg");
-
-    this.draw = function(env) {
-      this.drawShadow(env);
-      this.drawCircle(env);
-      this.drawImage(env);
-    }
-
-    this.drawShadow = function(env) {
-      var size = env.size;
-      var offset = env.hgrid / 6;
-      var shadowSize = env.hgrid * 0.9;
-      var ctx = env.ctx;
-      ctx.fillStyle = 'black';
-      ctx.globalAlpha = 0.2;
-      for (var i = 0; i < size; i++)
-        for (var j = 0; j < size; j++)
-          if (StoneType.exists(player.getStone(i, j)))
-            env.drawCircle(env.toX(i) - offset, env.toY(j) + offset, shadowSize, true);
-    }
-
-    this.drawCircle = function(env) {
-      var size = env.size;
-      var stoneSize = env.hgrid - 1;
-      var ctx = env.ctx;
-      ctx.globalAlpha = 1.0;
-
-      for (var i = 0; i < size; i++) {
-        for (var j = 0; j < size; j++) {
-          var stone = player.getStone(i, j);
-          if (StoneType.exists(stone)) {
-            var color = stone == StoneType.BLACK ? 'black' : 'rgb(210, 210, 210)';
-            ctx.fillStyle = color;
-            ctx.strokeStyle = 'rgb(0, 0, 0)';
-            ctx.lineWidth = 1;
-            env.drawCircle(env.toX(i), env.toY(j), stoneSize, true);
-          }
-        }
-      }
-    }
-
-    this.drawImage = function(env) {
-      var size = env.size;
-      var imgSize = env.grid - 2;
-      for (var i = 0; i < size; i++) {
-        for (var j = 0; j < size; j++) {
-          var stone = player.getStone(i, j);
-          if (StoneType.exists(stone)) {
-            var img = stone == StoneType.BLACK ? blackImg : whiteImg;
-            env.drawImage(img, env.toX(i) - imgSize / 2, env.toY(j) - imgSize / 2, imgSize, imgSize);
-          }
-        }
-      }
-    }
-  }
-
-  var HamaDrawer = function(option, player) {
-    this.draw = function(env) {
-      if (env.paddingBottom < 20)
-        return;
-      var ctx = env.ctx;
-      var y = env.paddingTop + env.boardAreaHeight + 25;
-      var basex = env.xOffset + 5;
-      ctx.fillStyle = "black";
-      ctx.font = "14pt Arial";
-      ctx.fillText("Cnt: "   + player.rule.cnt, basex + 0, y);
-      ctx.fillText("Black: " + player.rule.getBlackHama(), basex + 80, y);
-      ctx.fillText("White: " + player.rule.getWhiteHama(), basex + 160, y);
-    }
-  }
-
-  var ChildrenDrawer = function(option, player) {
-    this.draw = function(env) {
-      var tree = player.sgfTree;
-      var nodes = tree.current.children;
-      if (nodes.length < 2)
-        return;
-      var pointSize = env.hgrid / 2;
-      env.ctx.fillStyle = 'pink';
-      var stone = player.rule.nextStone;
-      for (var i = 0; i < nodes.length; i++) {
-        var node = nodes[i];
-        var move = player.propUtil.getMoveFrom(node);
-        if (move.stone == stone)
-          env.drawCircle(env.toX(move.x), env.toY(move.y), pointSize, true);
-      }
-    }
-  }
-
-  function createImage(drawer, path) {
-    var img = new Image();
-    img.src = path;
-    img.onload = function() {
-      drawer.draw();
-    }
-    return img;
-  }
-
-  this.create = function(player, ctx, opt) {
-    var drawer = new GoDrawer(player.size, ctx);
-
-    var option = {}
-    for (key in opt)
-      option[key] = opt[key];
-
-    option.blackImg = createImage(drawer, opt.blackImagePath);
-    option.whiteImg = createImage(drawer, opt.whiteImagePath);
-    option.boardImg = createImage(drawer, opt.boardImagePath);
-
-    option.shouldGet = function(key, defaultVal) {
-      var x = this[key];
-      if (x)
-        return x;
-      else if(defaultVal)
-        return defaultVal;
-
-      return null;//should raise error
-    }
-
-    drawer.addDrawHandler(new BackgroundDrawer(option));
-    drawer.addDrawHandler(new GridDrawer(option));
-    drawer.addDrawHandler(new StoneDrawer(option, player));
-    drawer.addDrawHandler(new HamaDrawer(option, player));
-    drawer.addDrawHandler(new ChildrenDrawer(option, player));
-
-    return drawer;
-  }
 }
 
 var ScanTable = function(size) {
@@ -963,10 +660,6 @@ var SgfTree = function() {
   }
 }
 
-var isArray = function(obj) {
-  return Object.prototype.toString.call(obj) === '[object Array]';
-}
-
 var Move = function(x, y, stone) {
   this.x = x;
   this.y = y;
@@ -1139,7 +832,6 @@ var PropUtil = function(tree) {
     return result;
   }
 
-
   this.addMoveProperty = function(x, y, stone) {
     var childIndex = this.moveProp.findChildIndexFrom(this.currentNode(), x, y, stone);
 
@@ -1283,6 +975,302 @@ var IgoPlayer = function(size, sgfTree) {
   }
 }
 
+var DrawerEnv = function(size, ctx) {
+  this.size = size;
+  this.ctx  = ctx;
+
+  this.paddingTop    = 10;
+  this.paddingBottom = 50;
+  this.paddingLeft   = 20;
+  this.paddingRight  = 20;
+
+  this.resize = function(width, height) {
+    this.canvasWidth  = width;
+    this.canvasHeight = height;
+
+    this.boardAreaWidth  = this.canvasWidth  - this.paddingLeft - this.paddingRight;
+    this.boardAreaHeight = this.canvasHeight - this.paddingTop  - this.paddingBottom;
+    this.hgrid = Math.floor(Math.min(this.boardAreaWidth, this.boardAreaHeight) / (2 * size));
+    this.grid  = this.hgrid * 2;
+    this.boardSize = this.grid * size;
+
+    this.xOffset = (this.boardAreaWidth  - this.boardSize) / 2 + this.paddingLeft;
+    this.yOffset = (this.boardAreaHeight - this.boardSize) / 2 + this.paddingTop;
+
+    ctx.canvas.width  = this.canvasWidth;
+    ctx.canvas.height = this.canvasHeight;
+  }
+
+  this.drawLine = function(x1, y1, x2, y2) {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+
+  this.drawCircle = function(x, y, r, fill) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI*2, false);
+    if (fill)
+      ctx.fill();
+    else
+      ctx.stroke();
+  }
+
+  this.drawImage = function(image, x, y, width, height) {
+    try {
+      ctx.drawImage(image, x, y, width, height);
+    } catch (e) {
+      if (e.name != "NS_ERROR_NOT_AVAILABLE")
+      throw e;
+    }
+  }
+
+  this.toX = function(i) {
+    return this.grid * i + this.hgrid + this.xOffset;
+  }
+
+  this.toY = function(j) {
+    return this.grid * j + this.hgrid + this.yOffset;
+  }
+
+  this.toI = function(x) {
+    return Math.floor((x - this.xOffset) / this.grid);
+  }
+
+  this.toJ = function(y) {
+    return Math.floor((y - this.yOffset) / this.grid);
+  }
+
+  this.mouseEventToIJ= function(e) {
+    var rect = e.target.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    var y = e.clientY - rect.top;
+    return { i: this.toI(x), j: this.toJ(y) };
+  }
+}
+
+var GoDrawer = function(size, ctx) {
+  this.env = new DrawerEnv(size, ctx);
+  this.handlers = [];
+
+  this.addDrawHandler = function(handler) {
+    this.handlers.push(handler);
+  }
+
+  this.resize = function(width, height) {
+    this.env.resize(width, height);
+    this.draw();
+  }
+
+  this.draw = function() {
+    for (var i = 0; i < this.handlers.length; i++) {
+      var handler = this.handlers[i];
+      if (handler.draw) {
+        ctx.save();
+        handler.draw(this.env);
+        ctx.restore();
+      }
+    }
+  }
+}
+
+var DefaultGoDrawerFactory = function() {
+
+  var BackgroundDrawer = function(option) {
+    var bgColor  = option.shouldGet("bgColor");
+    var boardImg = option.shouldGet("boardImg");
+
+    this.draw = function(env) {
+      env.ctx.fillStyle = bgColor;
+      env.ctx.fillRect(0, 0, env.canvasWidth, env.canvasHeight);
+      env.ctx.drawImage(boardImg, env.xOffset, env.yOffset, env.boardSize, env.boardSize);
+    }
+  }
+
+  var GridDrawer = function(option) {
+    var lineWidth = option.shouldGet("lineWidth");
+    var lineColor = option.shouldGet("lineColor");
+
+    this.draw = function(env) {
+      this.drawLine(env);
+      this.drawPoint(env);
+    }
+
+    this.drawLine = function(env) {
+      var size = env.size;
+      env.ctx.lineWidth   = Number(lineWidth);
+      env.ctx.strokeStyle = lineColor;
+      for (var i = 0; i < size; i++) {
+        env.drawLine(env.toX(0), env.toY(i), env.toX(size - 1), env.toY(i));
+        env.drawLine(env.toX(i), env.toY(0), env.toX(i), env.toY(size - 1));
+      }
+    }
+
+    this.drawPoint = function(env) {
+      var size = env.size;
+      var lpos = 3;
+      var rpos = size - lpos - 1;
+      var hpos = Math.floor(size / 2);
+
+      var points = [];
+      if (size > 10) {
+        points.push([lpos, lpos]);
+        points.push([rpos, lpos]);
+        points.push([lpos, rpos]);
+        points.push([rpos, rpos]);
+      }
+      if ((size % 2 == 1) && size >= 19) {
+        points.push([hpos, hpos]);
+        points.push([lpos, hpos]);
+        points.push([hpos, lpos]);
+        points.push([rpos, hpos]);
+        points.push([hpos, rpos]);
+      }
+
+      var pointSize = env.hgrid / 4;
+      env.ctx.fillStyle = 'black';
+      for (var i = 0; i < points.length; i++) {
+        var p = points[i];
+        env.drawCircle(env.toX(p[0]), env.toY(p[1]), pointSize, true);
+      }
+    }
+  }
+
+  var StoneDrawer = function(option, player) {
+    var blackStoneColor = option.shouldGet("blackStoneColor", "black");
+    var whiteStoneColor = option.shouldGet("whiteStoneColor", "white");
+    var blackStoneImg   = option.shouldGet("blackStoneImg");
+    var whiteStoneImg   = option.shouldGet("whiteStoneImg");
+
+    this.draw = function(env) {
+      this.drawShadow(env);
+      this.drawCircle(env);
+      this.drawImage(env);
+    }
+
+    this.drawShadow = function(env) {
+      var size = env.size;
+      var offset = env.hgrid / 6;
+      var shadowSize = env.hgrid * 0.9;
+      var ctx = env.ctx;
+      ctx.fillStyle = 'black';
+      ctx.globalAlpha = 0.2;
+      for (var i = 0; i < size; i++)
+        for (var j = 0; j < size; j++)
+          if (StoneType.exists(player.getStone(i, j)))
+            env.drawCircle(env.toX(i) - offset, env.toY(j) + offset, shadowSize, true);
+    }
+
+    this.drawCircle = function(env) {
+      var size = env.size;
+      var stoneSize = env.hgrid - 1;
+      var ctx = env.ctx;
+      ctx.globalAlpha = 1.0;
+
+      for (var i = 0; i < size; i++) {
+        for (var j = 0; j < size; j++) {
+          var stone = player.getStone(i, j);
+          if (StoneType.exists(stone)) {
+            var color = stone == StoneType.BLACK ? blackStoneColor : whiteStoneColor;
+            ctx.fillStyle = color;
+            ctx.strokeStyle = 'rgb(0, 0, 0)';
+            ctx.lineWidth = 1;
+            env.drawCircle(env.toX(i), env.toY(j), stoneSize, true);
+          }
+        }
+      }
+    }
+
+    this.drawImage = function(env) {
+      var size = env.size;
+      var imgSize = env.grid - 2;
+      for (var i = 0; i < size; i++) {
+        for (var j = 0; j < size; j++) {
+          var stone = player.getStone(i, j);
+          if (StoneType.exists(stone)) {
+            var img = stone == StoneType.BLACK ? blackStoneImg : whiteStoneImg;
+            env.drawImage(img, env.toX(i) - imgSize / 2, env.toY(j) - imgSize / 2, imgSize, imgSize);
+          }
+        }
+      }
+    }
+  }
+
+  var HamaDrawer = function(option, player) {
+    this.draw = function(env) {
+      if (env.paddingBottom < 20)
+        return;
+      var ctx = env.ctx;
+      var y = env.paddingTop + env.boardAreaHeight + 25;
+      var basex = env.xOffset + 5;
+      ctx.fillStyle = "black";
+      ctx.font = "14pt Arial";
+      ctx.fillText("Cnt: "   + player.rule.cnt, basex + 0, y);
+      ctx.fillText("Black: " + player.rule.getBlackHama(), basex + 80, y);
+      ctx.fillText("White: " + player.rule.getWhiteHama(), basex + 160, y);
+    }
+  }
+
+  var ChildrenDrawer = function(option, player) {
+    var branchPointColor = option.shouldGet("branchPointColor", "pink");
+    this.draw = function(env) {
+      var tree = player.sgfTree;
+      var nodes = tree.current.children;
+      if (nodes.length < 2)
+        return;
+      var pointSize = env.hgrid / 2;
+      env.ctx.fillStyle = branchPointColor;
+      var stone = player.rule.nextStone;
+      for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        var move = player.propUtil.getMoveFrom(node);
+        if (move.stone == stone)
+          env.drawCircle(env.toX(move.x), env.toY(move.y), pointSize, true);
+      }
+    }
+  }
+
+  function createImage(drawer, path) {
+    var img = new Image();
+    img.src = path;
+    img.onload = function() {
+      drawer.draw();
+    }
+    return img;
+  }
+
+  this.create = function(player, ctx, opt) {
+    var drawer = new GoDrawer(player.size, ctx);
+
+    var option = {}
+    for (key in opt)
+      option[key] = opt[key];
+
+    option.blackStoneImg = createImage(drawer, opt.blackStoneImagePath);
+    option.whiteStoneImg = createImage(drawer, opt.whiteStoneImagePath);
+    option.boardImg = createImage(drawer, opt.boardImagePath);
+
+    option.shouldGet = function(key, defaultVal) {
+      var x = this[key];
+      if (x)
+        return x;
+      else if(defaultVal)
+        return defaultVal;
+
+      return null;//should raise error
+    }
+
+    drawer.addDrawHandler(new BackgroundDrawer(option));
+    drawer.addDrawHandler(new GridDrawer(option));
+    drawer.addDrawHandler(new StoneDrawer(option, player));
+    drawer.addDrawHandler(new HamaDrawer(option, player));
+    drawer.addDrawHandler(new ChildrenDrawer(option, player));
+
+    return drawer;
+  }
+}
+
 var createDrawer = function(player, id) {
   var canvas = document.getElementById(id);
   if (!canvas || !canvas.getContext)
@@ -1291,26 +1279,39 @@ var createDrawer = function(player, id) {
 
   var factory = new DefaultGoDrawerFactory();
   var drawer = factory.create(player, ctx, {
-    blackImagePath: "images/black.png",
-    whiteImagePath: "images/white.png",
+    blackStoneColor: "black",
+    whiteStoneColor: "rgb(210, 210, 210)",
+    blackStoneImagePath: "images/black.png",
+    whiteStoneImagePath: "images/white.png",
     boardImagePath: "images/wood.png",
+    branchPointColor: "pink",
     bgColor: 'rgb(252, 247, 242)',
     lineWidth: 1,
     lineColor: 'black',
   });
+  
+  var env = drawer.env;
+  var downPos = {};
 
   canvas.addEventListener("click", function(e) {
-    drawer.clickEventHandler(e);
+    var p = env.mouseEventToIJ(e);
+    var r = e.target.getBoundingClientRect();
+    if (p.i    == downPos.p.i    &&
+        p.j    == downPos.p.j    &&
+        r.left == downPos.r.left &&
+        r.top  == downPos.r.top)
+      player.putStone(p.i, p.j);
   });
+
   canvas.addEventListener("mousedown", function(e) {
-    drawer.mousedownEventHandler(e);
+    downPos.p = env.mouseEventToIJ(e);
+    downPos.r = e.target.getBoundingClientRect();
   });
+
   player.addListener(function() {
     drawer.draw();
   });
-  drawer.clickEventListener = function(x, y) {
-    player.putStone(x, y);
-  }
+
   return drawer;
 }
 
