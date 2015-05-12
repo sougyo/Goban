@@ -369,7 +369,7 @@ var SgfReader = function() {
   this.consumeToken = function(type) {
     var token = this.nextToken();
     if (token.type != type)
-      throw new Error("consume error actual:" + token.type + " expected: " + type + " at:" + this.pos);
+      throw new Error("Parse Error: Expected:" + type + " Actual:" + token.type + " at:" + this.pos);
   }
 
   this.cache = null;
@@ -437,25 +437,27 @@ var SgfReader = function() {
   }
 
   this.parseError = function() {
-    throw new Error("parse error at:" + this.pos + " rest: '" + this.rest.substr(0, 10) + "'");
+    throw new Error("Parse Error at:" + this.pos + " rest: '" + this.rest.substr(0, 10) + "'");
   }
 }
 
 var SgfWriter = function() {
   this.writeSgf = function(tree) {
     this.result = "";
-    this.writeHelepr(tree.root);
+    this.writeHelepr(tree.root, true);
     return this.result;
   }
 
-  this.writeHelepr = function(node) {
+  this.writeHelepr = function(node, force) {
     var children = node.children;
+    var flag = force || (children.length == 1 ? false : true);
+
     for (var i = 0; i < children.length; i++) {
+      if (flag) this.append("(");
       var child = children[i];
-      this.append("(");
-      this.append(child.toString());
+      this.append(child);
       this.writeHelepr(child);
-      this.append(")");
+      if (flag) this.append(")");
     }
   }
 
@@ -535,7 +537,6 @@ var SgfNode = function(parentNode) {
     this.children[this.childIndex] = child;
   }
 
-  // helper function for toString
   var propValue2str = function(propValue) {
     if (!propValue)
       return "";
@@ -862,6 +863,11 @@ var PropUtil = function(tree) {
     }
   }
 
+  this.isStoneProp = function() {
+    var node = this.currentNode();
+    return (this.getMoveFrom(node) || this.getSetupMovesFrom(node)) ? true : false;
+  }
+
   this.getMoveFrom = function(node) {
     return this.moveProp.getMoveFrom(node);
   }
@@ -880,9 +886,30 @@ var IgoPlayer = function(size, sgfTree) {
   this.rule = new IgoRuleEngine(size);
   this.listeners = [];
 
-  this.sgfTree = sgfTree ? sgfTree : new SgfTree();
+  function initTree(tree) {
+    var current = tree.current;
+    tree.resetIndexes();
+
+    if (!current.hasChild())
+      tree.newChild();
+    else
+      tree.forward();
+
+    if (!current.getProperty("FF"))
+      tree.current.setProperty("FF", "4");
+
+    if (!current.getProperty("GM"))
+      tree.current.setProperty("GM", "1");
+
+    if (!current.getProperty("SZ"))
+      tree.current.setProperty("SZ", size);
+
+    return tree;
+  }
+
+  this.sgfTree = initTree(sgfTree ? sgfTree : new SgfTree());
   this.propUtil = new PropUtil(this.sgfTree);
-  
+
   this.putStone = function(x, y) {
     var stone = this.rule.nextStone;
     if (this.rule.putStone(x, y)) {
@@ -924,22 +951,28 @@ var IgoPlayer = function(size, sgfTree) {
   }
 
   this.back = function() {
-    if (this.sgfTree.back())
-      this.updateGoban();
+    this.back_n(1);
   }
 
   this.back_n = function(n) {
-    for (var i = 0; i < n && this.sgfTree.back(); i++);
+    for (var i = 0; i < n; i++) {
+      if (this.sgfTree.current.parentNode == this.sgfTree.root)
+        break;
+      this.sgfTree.back();
+    }
     this.updateGoban();
   }
 
   this.forward = function() {
-    if (this.sgfTree.forward())
-      this.updateGoban();
+    this.forward_n(1);
   }
 
   this.forward_n = function(n) {
-    for (var i = 0; i < n && this.sgfTree.forward(); i++);
+    for (var i = 0; i < n; i++) {
+      if (!this.sgfTree.current.hasChild())
+        break;
+      this.sgfTree.forward();
+    }
     this.updateGoban();
   }
 
@@ -979,10 +1012,10 @@ var DrawerEnv = function(size, ctx) {
   this.size = size;
   this.ctx  = ctx;
 
-  this.paddingTop    = 10;
-  this.paddingBottom = 50;
-  this.paddingLeft   = 20;
-  this.paddingRight  = 20;
+  this.paddingTop    = 5;
+  this.paddingBottom = 5;
+  this.paddingLeft   = 10;
+  this.paddingRight  = 10;
 
   this.resize = function(width, height) {
     this.canvasWidth  = width;
@@ -1078,7 +1111,7 @@ var GoDrawer = function(size, ctx) {
 var DefaultGoDrawerFactory = function() {
 
   var BackgroundDrawer = function(option) {
-    var bgColor  = option.shouldGet("bgColor");
+    var bgColor  = option.shouldGet("bgColor", "white");
     var boardImg = option.shouldGet("boardImg");
 
     this.draw = function(env) {
@@ -1089,8 +1122,8 @@ var DefaultGoDrawerFactory = function() {
   }
 
   var GridDrawer = function(option) {
-    var lineWidth = option.shouldGet("lineWidth");
-    var lineColor = option.shouldGet("lineColor");
+    var lineWidth = option.shouldGet("lineWidth", 1);
+    var lineColor = option.shouldGet("lineColor", "black");
 
     this.draw = function(env) {
       this.drawLine(env);
@@ -1271,24 +1304,14 @@ var DefaultGoDrawerFactory = function() {
   }
 }
 
-var createDrawer = function(player, id) {
+var createDrawer = function(player, id, opt) {
   var canvas = document.getElementById(id);
   if (!canvas || !canvas.getContext)
     return;
   var ctx = canvas.getContext('2d');
 
   var factory = new DefaultGoDrawerFactory();
-  var drawer = factory.create(player, ctx, {
-    blackStoneColor: "black",
-    whiteStoneColor: "rgb(210, 210, 210)",
-    blackStoneImagePath: "images/black.png",
-    whiteStoneImagePath: "images/white.png",
-    boardImagePath: "images/wood.png",
-    branchPointColor: "pink",
-    bgColor: 'rgb(252, 247, 242)',
-    lineWidth: 1,
-    lineColor: 'black',
-  });
+  var drawer = factory.create(player, ctx, opt);
   
   var env = drawer.env;
   var downPos = {};
