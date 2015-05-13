@@ -539,7 +539,7 @@ var SgfNode = function(parentNode) {
 
   var propValue2str = function(propValue) {
     if (!propValue)
-      return "";
+      return "[]";
 
     if (!isArray(propValue))
       propValue = [propValue];
@@ -879,6 +879,71 @@ var PropUtil = function(tree) {
   this.currentNode = function() {
     return this.tree.current;
   }
+
+  this.isRootNode = function() {
+    return this.tree.current == this.tree.root;
+  }
+
+  this.isInfoNode = function() {
+    return this.tree.current.parentNode == this.tree.root;
+  }
+
+  this.getInfoNode = function() {
+    return this.tree.root.getChild();
+  }
+
+  this.setInfoNode = function(props, overwrite) {
+    var infoNode = this.getInfoNode();
+
+    for (key in props) {
+      if (overwrite || !infoNode.getProperty(key)) {
+        var val = props[key];
+        if (val)
+          infoNode.setProperty(key, props[key]);
+        else
+          infoNode.removeProperty(key);
+      }
+    }
+  }
+
+  this.isLeafNode = function() {
+    return !this.tree.current.hasChild();
+  }
+
+  this.currentConfNode = function() {
+    return this.tree.root.getChild();
+  }
+
+  this.initTree = function(size) {
+    this.tree.resetIndexes();
+
+    if (this.tree.root.hasChild())
+      this.tree.forward();
+    else
+      this.tree.newChild();
+
+    this.setInfoNode({
+      "FF": "4",
+      "GM": "1",
+      "SZ": size
+    }, false);
+  }
+
+  this.backToHead = function() {
+    while (true) {
+      if (this.isRootNode() || this.isInfoNode())
+        break;
+      this.tree.back();
+    }
+  }
+
+  this.forwardToTail = function() {
+    while (true) {
+      if (this.isLeafNode())
+        break;
+      this.tree.forward();
+    }
+  }
 }
 
 var IgoPlayer = function(size, sgfTree) {
@@ -886,29 +951,9 @@ var IgoPlayer = function(size, sgfTree) {
   this.rule = new IgoRuleEngine(size);
   this.listeners = [];
 
-  function initTree(tree) {
-    var current = tree.current;
-    tree.resetIndexes();
-
-    if (!current.hasChild())
-      tree.newChild();
-    else
-      tree.forward();
-
-    if (!current.getProperty("FF"))
-      tree.current.setProperty("FF", "4");
-
-    if (!current.getProperty("GM"))
-      tree.current.setProperty("GM", "1");
-
-    if (!current.getProperty("SZ"))
-      tree.current.setProperty("SZ", size);
-
-    return tree;
-  }
-
-  this.sgfTree = initTree(sgfTree ? sgfTree : new SgfTree());
+  this.sgfTree = sgfTree ? sgfTree : new SgfTree();
   this.propUtil = new PropUtil(this.sgfTree);
+  this.propUtil.initTree(size);
 
   this.putStone = function(x, y) {
     var stone = this.rule.nextStone;
@@ -956,7 +1001,7 @@ var IgoPlayer = function(size, sgfTree) {
 
   this.back_n = function(n) {
     for (var i = 0; i < n; i++) {
-      if (this.sgfTree.current.parentNode == this.sgfTree.root)
+      if (this.propUtil.isInfoNode())
         break;
       this.sgfTree.back();
     }
@@ -976,7 +1021,19 @@ var IgoPlayer = function(size, sgfTree) {
     this.updateGoban();
   }
 
+  this.backToHead = function() {
+    this.propUtil.backToHead();
+    this.updateGoban();
+  }
+
+  this.forwardToTail = function() {
+    this.propUtil.forwardToTail();
+    this.updateGoban();
+  }
+
   this.cut = function() {
+    if (this.propUtil.isInfoNode())
+      return;
     if (this.sgfTree.cut())
       this.updateGoban();
   }
