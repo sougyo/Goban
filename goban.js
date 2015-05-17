@@ -287,6 +287,47 @@ var IgoRuleEngine = function(size) {
   }
 }
 
+var SgfPropParser = function() {
+  var parseIgoPointX = function(c) {
+    if (c.match(/^[a-z]$/))
+      return c.charCodeAt() - "a".charCodeAt();
+
+    if (c.match(/^[A-Z]$/))
+      return c.charCodeAt() - "A".charCodeAt() + 26;
+  }
+
+  var parseIgoPoint = function(str) {
+    if (str.match(/^[a-zA-Z][a-zA-Z]$/)) {
+      var x = parseIgoPointX(str[0]);
+      var y = parseIgoPointX(str[1]); 
+      if (x >= 0 && y >= 0) return new IgoPoint(x, y);
+    }
+  }
+
+  var justOneIgoPoint = function(blocks) {
+    if (blocks.length == 1)
+      return parseIgoPoint(blocks[0]);
+  }
+
+  var manyIgoPoint = function(blocks) {
+    var result = [];
+    for (var i = 0; i < blocks.length; i++) {
+      var p = parseIgoPoint(blocks[i]);
+      if (p)
+        result.push(p);
+    }
+    return result;
+  }
+
+  return {
+    B:  justOneIgoPoint,
+    W:  justOneIgoPoint,
+    AB: manyIgoPoint,
+    AW: manyIgoPoint,
+    AE: manyIgoPoint,
+  };
+}();
+
 var SgfReader = function() {
   this.Eof            = 0;
   this.LeftParenthes  = 1;
@@ -348,7 +389,7 @@ var SgfReader = function() {
       while(block = this.readTokenByType(this.BracketBlock))
         blocks.push(block);
       
-      var parser = SgfParser[ident];
+      var parser = SgfPropParser[ident];
       node.setProperty(ident, parser ? parser(blocks) : blocks);
     }
 
@@ -401,13 +442,11 @@ var SgfReader = function() {
         return new this.Token(this.Semicolon, true);
       case '[':
         var p = 0;
-        while (true) {
+        do {
           p = this.rest.indexOf("]", p + 1);
           if (p == -1)
             this.parseError();
-          if (this.rest[p - 1] != '\\')
-            break;
-        }
+        } while (this.rest[p - 1] == '\\');
         var block = this.nextPos(p + 1).slice(1, -1);
         return new this.Token(this.BracketBlock, block);
       default:
@@ -475,6 +514,16 @@ var SgfNode = function(parentNode) {
 
   this.setProperty = function(propIdent, propValue) {
     this.properties[propIdent] = propValue;
+  }
+
+  this.setProperties = function(props, overwrite) {
+    for (key in props) {
+      if (overwrite || !this.getProperty(key)) {
+        var val = props[key];
+        if (val)
+          this.setProperty(key, props[key]);
+      }
+    }
   }
 
   this.getProperty = function(propIdent) {
@@ -655,7 +704,7 @@ var SgfTree = function() {
     for (var i = 0; i < children.length; i++) {
       var child = children[i];
       if (child.parentNode != node)
-        throw new ("detect invalid link");
+        throw new Error("detect invalid link");
       this.resetIndexesHelper(child);
     }
   }
@@ -692,47 +741,6 @@ var IgoPoint = function(x, y) {
     return new IgoPoint(this.x, this.y);
   }
 }
-
-var SgfParser = function() {
-  var parseIgoPointX = function(c) {
-    if (c.match(/^[a-z]$/))
-      return c.charCodeAt() - "a".charCodeAt();
-
-    if (c.match(/^[A-Z]$/))
-      return c.charCodeAt() - "A".charCodeAt() + 26;
-  }
-
-  var parseIgoPoint = function(str) {
-    if (str.match(/^[a-zA-Z][a-zA-Z]$/)) {
-      var x = parseIgoPointX(str[0]);
-      var y = parseIgoPointX(str[1]); 
-      if (x >= 0 && y >= 0) return new IgoPoint(x, y);
-    }
-  }
-
-  var justOneIgoPoint = function(blocks) {
-    if (blocks.length == 1)
-      return parseIgoPoint(blocks[0]);
-  }
-
-  var manyIgoPoint = function(blocks) {
-    var result = [];
-    for (var i = 0; i < blocks.length; i++) {
-      var p = parseIgoPoint(blocks[i]);
-      if (p)
-        result.push(p);
-    }
-    return result;
-  }
-
-  return {
-    B:  justOneIgoPoint,
-    W:  justOneIgoPoint,
-    AB: manyIgoPoint,
-    AW: manyIgoPoint,
-    AE: manyIgoPoint,
-  };
-}();
 
 var PropUtil = function(tree) {
   this.tree = tree;
@@ -884,54 +892,25 @@ var PropUtil = function(tree) {
     return this.tree.current == this.tree.root;
   }
 
-  this.isInfoNode = function() {
+  this.isRootPropNode = function() {
     return this.tree.current.parentNode == this.tree.root;
   }
 
-  this.getInfoNode = function() {
+  this.getRootPropNode = function() {
     return this.tree.root.getChild();
   }
 
-  this.setInfoNode = function(props, overwrite) {
-    var infoNode = this.getInfoNode();
-
-    for (key in props) {
-      if (overwrite || !infoNode.getProperty(key)) {
-        var val = props[key];
-        if (val)
-          infoNode.setProperty(key, props[key]);
-        else
-          infoNode.removeProperty(key);
-      }
-    }
+  this.getGameInfoPropNode = function() {
+    return this.tree.root.getChild();
   }
 
   this.isLeafNode = function() {
     return !this.tree.current.hasChild();
   }
 
-  this.currentConfNode = function() {
-    return this.tree.root.getChild();
-  }
-
-  this.initTree = function(size) {
-    this.tree.resetIndexes();
-
-    if (this.tree.root.hasChild())
-      this.tree.forward();
-    else
-      this.tree.newChild();
-
-    this.setInfoNode({
-      "FF": "4",
-      "GM": "1",
-      "SZ": size
-    }, false);
-  }
-
   this.backToHead = function() {
     while (true) {
-      if (this.isRootNode() || this.isInfoNode())
+      if (this.isRootNode() || this.isRootPropNode())
         break;
       this.tree.back();
     }
@@ -944,16 +923,55 @@ var PropUtil = function(tree) {
       this.tree.forward();
     }
   }
+
+  this.getGobanSize = function() {
+    var sz = this.getRootPropNode().getProperty("SZ");
+    if (sz)
+      return Number(sz);
+  }
 }
 
-var IgoPlayer = function(size, sgfTree) {
-  this.size = size;
-  this.rule = new IgoRuleEngine(size);
-  this.listeners = [];
+var IgoTreeFactory = new function() {
+  var initTree = function(size, tree) {
+    tree.resetIndexes();
 
-  this.sgfTree = sgfTree ? sgfTree : new SgfTree();
-  this.propUtil = new PropUtil(this.sgfTree);
-  this.propUtil.initTree(size);
+    if (tree.root.hasChild())
+      tree.forward();
+    else
+      tree.newChild();
+
+    var propUtil = new PropUtil(tree);
+    propUtil.getRootPropNode().setProperties({
+      "FF": "4",
+      "GM": "1",
+      "SZ": size
+    }, false);
+  }
+
+  this.create = function(size) {
+    var tree = new SgfTree();
+    initTree(size, tree);
+    return tree;
+  }
+
+  this.createBySgf = function(sgf) {
+    var reader = new SgfReader();
+    var tree = reader.readSgf(sgf);
+    initTree(null, tree);
+    return tree;
+  }
+}();
+
+var IgoPlayer = function(igoTree) {
+  this.sgfTree = igoTree;
+  this.propUtil = new PropUtil(igoTree);
+
+  this.size = this.propUtil.getGobanSize();
+  if (!this.size)
+    throw new Error("cannot get size");
+
+  this.rule = new IgoRuleEngine(this.size);
+  this.listeners = [];
 
   this.putStone = function(x, y) {
     var stone = this.rule.nextStone;
@@ -1001,7 +1019,7 @@ var IgoPlayer = function(size, sgfTree) {
 
   this.back_n = function(n) {
     for (var i = 0; i < n; i++) {
-      if (this.propUtil.isInfoNode())
+      if (this.propUtil.isRootPropNode())
         break;
       this.sgfTree.back();
     }
@@ -1032,7 +1050,7 @@ var IgoPlayer = function(size, sgfTree) {
   }
 
   this.cut = function() {
-    if (this.propUtil.isInfoNode())
+    if (this.propUtil.isRootPropNode())
       return;
     if (this.sgfTree.cut())
       this.updateGoban();
