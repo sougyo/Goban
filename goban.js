@@ -287,6 +287,32 @@ var IgoRuleEngine = function(size) {
   }
 }
 
+var IgoPoint = function(x, y) {
+  this.x = x;
+  this.y = y;
+
+  function toChar(x) {
+    if (0 <= x && x < 26)
+      return String.fromCharCode("a".charCodeAt() + x);
+    else if (26 <= x && x < 52)
+      return String.fromCharCode("A".charCodeAt() + x - 26);
+  }
+
+  this.toString = function() {
+    if (this.x >= 0 && this.y >= 0) {
+      var strX = toChar(this.x);
+      var strY = toChar(this.y);
+      if (strX && strY)
+        return strX + strY;
+    }
+    return ""
+  }
+
+  this.copy = function() {
+    return new IgoPoint(this.x, this.y);
+  }
+}
+
 var SgfPropParser = function() {
   var parseIgoPointX = function(c) {
     if (c.match(/^[a-z]$/))
@@ -296,35 +322,109 @@ var SgfPropParser = function() {
       return c.charCodeAt() - "A".charCodeAt() + 26;
   }
 
-  var parseIgoPoint = function(str) {
+  function parseIgoPoint(str) {
+    if (str.match(/^$/))
+      return new IgoPoint(-1, -1);
+
     if (str.match(/^[a-zA-Z][a-zA-Z]$/)) {
       var x = parseIgoPointX(str[0]);
       var y = parseIgoPointX(str[1]); 
-      if (x >= 0 && y >= 0) return new IgoPoint(x, y);
+      if (x >= 0 && y >= 0)
+        return new IgoPoint(x, y);
     }
   }
 
-  var justOneIgoPoint = function(blocks) {
-    if (blocks.length == 1)
-      return parseIgoPoint(blocks[0]);
+  function parseNumber(str) {
+    if (str.match(/^[+-]?\d+$/))
+      return Number(str);
   }
 
-  var manyIgoPoint = function(blocks) {
-    var result = [];
-    for (var i = 0; i < blocks.length; i++) {
-      var p = parseIgoPoint(blocks[i]);
-      if (p)
+  function parseReal(str) {
+    if (str.match(/^[+-]?\d+(\.\d+)?$/))
+      return Number(str);
+  }
+
+  function parseSimpleText(str) {
+    // TODO
+    return str;
+  }
+
+  function parseText(str) {
+    // TODO
+    return str;
+  }
+
+  function orParser(parse1, parse2) {
+    return function(block) {
+      var r1 = parse1(block);
+      return r1 ? r1 : parse2(block);
+    }
+  }
+
+  function genOneParser(parse) {
+    return function(blocks) {
+      if (blocks.length == 1)
+        return parse(blocks[0]);
+    };
+  }
+
+  function genManyParser(parse) {
+    return function(blocks) {
+      var result = [];
+      for (var i = 0; i < blocks.length; i++) {
+        var p = parse(blocks[i]);
+        if (!p)
+          return;
         result.push(p);
+      }
+      return result;
     }
-    return result;
   }
 
   return {
-    B:  justOneIgoPoint,
-    W:  justOneIgoPoint,
-    AB: manyIgoPoint,
-    AW: manyIgoPoint,
-    AE: manyIgoPoint,
+    B:  genOneParser(parseIgoPoint),
+    KO: genOneParser(parseIgoPoint),
+    MN: genOneParser(parseIgoPoint),
+    W:  genOneParser(parseIgoPoint),
+
+    AB: genManyParser(parseIgoPoint),
+    AE: genManyParser(parseIgoPoint),
+    AW: genManyParser(parseIgoPoint),
+
+    C:  genOneParser(parseText),
+
+    CA: genOneParser(parseSimpleText),
+    FF: genOneParser(parseNumber),
+    GM: genOneParser(parseNumber),
+    ST: genOneParser(parseNumber),
+    SZ: genOneParser(parseNumber),
+
+    AN: genOneParser(parseSimpleText),
+    BR: genOneParser(parseSimpleText),
+    BT: genOneParser(parseSimpleText),
+    CP: genOneParser(parseSimpleText),
+    DT: genOneParser(parseSimpleText),
+    EV: genOneParser(parseSimpleText),
+    GN: genOneParser(parseSimpleText),
+    GC: genOneParser(parseText),
+    ON: genOneParser(parseSimpleText),
+    OT: genOneParser(parseSimpleText),
+    PB: genOneParser(parseSimpleText),
+    PC: genOneParser(parseSimpleText),
+    PW: genOneParser(parseSimpleText),
+    PE: genOneParser(parseSimpleText),
+    RO: genOneParser(parseSimpleText),
+    RU: genOneParser(parseSimpleText),
+    SO: genOneParser(parseSimpleText),
+    TM: genOneParser(parseReal),
+    US: genOneParser(parseSimpleText),
+    WR: genOneParser(parseSimpleText),
+    WT: genOneParser(parseSimpleText),
+
+    BL: genOneParser(parseReal),
+    OB: genOneParser(parseNumber),
+    OW: genOneParser(parseNumber),
+    WL: genOneParser(parseReal),
   };
 }();
 
@@ -384,13 +484,20 @@ var SgfReader = function() {
     var node = new SgfNode(parentNode);
 
     var ident;
-    while (ident = this.readTokenByType(this.UcWord)) {
+    while (ident_token = this.readTokenByType(this.UcWord)) {
+      var ident = ident_token.data;
       var blocks = [];
-      while(block = this.readTokenByType(this.BracketBlock))
-        blocks.push(block);
+      while(block_token = this.readTokenByType(this.BracketBlock))
+        blocks.push(block_token.data);
       
       var parser = SgfPropParser[ident];
-      node.setProperty(ident, parser ? parser(blocks) : blocks);
+      if (parser) {
+
+        var p = parser(blocks);
+        if (p)
+          node.setProperty(ident, p);
+      } else
+        node.setProperty(ident, blocks);
     }
 
     parentNode.addChild(node);
@@ -401,7 +508,7 @@ var SgfReader = function() {
     token = this.nextToken();
 
     if (token.type == type)
-      return token.data;
+      return token;
 
     if (token.type != this.Eof)
       this.cacheToken(token);
@@ -716,32 +823,6 @@ var Move = function(x, y, stone) {
   this.stone = stone;
 }
 
-var IgoPoint = function(x, y) {
-  this.x = x;
-  this.y = y;
-
-  this.toString = function() {
-    if (this.x >= 0 && this.y >= 0) {
-      var strX = this.toChar(this.x);
-      var strY = this.toChar(this.y);
-      if (strX && strY)
-        return strX + strY;
-    }
-    return ""
-  }
-
-  this.toChar = function(x) {
-    if (0 <= x && x < 26)
-      return String.fromCharCode("a".charCodeAt() + x);
-    else if (26 <= x && x < 52)
-      return String.fromCharCode("A".charCodeAt() + x - 26);
-  }
-
-  this.copy = function() {
-    return new IgoPoint(this.x, this.y);
-  }
-}
-
 var PropUtil = function(tree) {
   this.tree = tree;
 
@@ -925,14 +1006,10 @@ var PropUtil = function(tree) {
   }
 
   this.getGobanSize = function() {
-    var sz = this.getRootPropNode().getProperty("SZ");
-    if (sz)
-      return Number(sz);
+    return this.getRootPropNode().getProperty("SZ");
   }
-}
 
-var IgoTreeFactory = new function() {
-  var initTree = function(size, tree) {
+  this.initIgoTree = function(size) {
     tree.resetIndexes();
 
     if (tree.root.hasChild())
@@ -940,25 +1017,30 @@ var IgoTreeFactory = new function() {
     else
       tree.newChild();
 
-    var propUtil = new PropUtil(tree);
-    propUtil.getRootPropNode().setProperties({
-      "FF": "4",
-      "GM": "1",
+    this.getRootPropNode().setProperties({
+      "FF": 4,
+      "GM": 1,
       "SZ": size
     }, false);
+  }
+}
+
+var IgoTreeFactory = new function() {
+  var igoTree = function(size, tree) {
+    var propUtil = new PropUtil(tree);
+    propUtil.initIgoTree(size);
+    return tree;
   }
 
   this.create = function(size) {
     var tree = new SgfTree();
-    initTree(size, tree);
-    return tree;
+    return igoTree(size, tree);
   }
 
   this.createBySgf = function(sgf) {
     var reader = new SgfReader();
     var tree = reader.readSgf(sgf);
-    initTree(null, tree);
-    return tree;
+    return igoTree(null, tree);
   }
 }();
 
