@@ -492,7 +492,6 @@ var SgfReader = function() {
       
       var parser = SgfPropParser[ident];
       if (parser) {
-
         var p = parser(blocks);
         if (p)
           node.setProperty(ident, p);
@@ -826,147 +825,106 @@ var Move = function(x, y, stone) {
 var PropUtil = function(tree) {
   this.tree = tree;
 
-  var StonePropBase = function(dict) {
-    this.dict = dict;
-    this.stone2ident = function(stone) {
-      for (var i = 0; i < this.dict.length; i++)
-        if (this.dict[i][1] == stone)
-          return this.dict[i][0];
-    }
+  var movePropDict = {
+    "B": StoneType.BLACK,
+    "W": StoneType.WHITE
+  };
 
-    this.ident2stone = function(ident) {
-      for (var i = 0; i < this.dict.length; i++)
-        if (this.dict[i][0] == ident)
-          return this.dict[i][1];
-    }
+  var setupPropDict = {
+    "AB": StoneType.BLACK,
+    "AW": StoneType.WHITE,
+    "AE": StoneType.NONE 
+  };
 
-    this.length = function() {
-      return this.dict.length;
-    }
-
-    this.identAt = function(index) {
-      return this.dict[index][0];
-    }
-
-    this.stoneAt = function(index) {
-      return this.dict[index][1];
-    }
-
-    this.existsIn = function(node) {
-      for (var i = 0; i < this.dict.length; i++) {
-        if (node.hasProperty(this.identAt(i)))
-          return true;
-      }
-      return false;
-    }
-  }
-  
-  this.moveProp = new StonePropBase([
-      ["B",  StoneType.BLACK],
-      ["W",  StoneType.WHITE]
-  ]);
-
-  this.setupProp = new StonePropBase([
-      ["AB", StoneType.BLACK],
-      ["AW", StoneType.WHITE],
-      ["AE", StoneType.NONE ]
-  ]);
-
-  this.moveProp.findChildIndexFrom = function(node, x, y, stone) {
-    for (var i = 0; i < node.children.length; i++) {
-      var child = node.children[i];
-      var val = child.getProperty(this.stone2ident(stone));
-      if (val && val.x == x && val.y == y)
-        return i;
-    }
-    return null;
+  function val2ident(dict, val) {
+    for (ident in dict)
+      if (dict[ident] == val)
+        return ident;
   }
 
-  this.moveProp.getMoveFrom = function(node) {
-    for (var i = 0; i < this.length(); i++) {
-      var p = node.getProperty(this.identAt(i));
-      if (p)
-        return new Move(p.x, p.y, this.stoneAt(i));
-    }
+  function existsIn(dict, node) {
+    for (ident in dict)
+      if (node.hasProperty(ident))
+        return true;
+    return false;
   }
 
-  this.setupProp.removeMatchedPointFrom = function(node, x, y) {
-    for (var i = 0; i < this.length(); i++) {
-      var ident = this.identAt(i);
-      var propVal = node.getProperty(ident);
-      if (!propVal)
-        continue;
-      for (var j = 0; j < propVal.length; j++) {
-        var p = propVal[j];
-        if (p.x == x && p.y == y) {
-          propVal.splice(j, 1);
-          break;
+  function removeMatchedSetupPoint(node, x, y) {
+    for (ident in setupPropDict) {
+      var points = node.getProperty(ident);
+      if (points) {
+        for (var i = 0; i < points.length; i++) {
+          var p = points[i];
+          if (p.x == x && p.y == y) {
+            points.splice(i, 1);
+            break;
+          }
         }
+        if (points.length == 0)
+          node.removeProperty(ident);
       }
-      if (propVal.length == 0)
-        node.removeProperty(ident);
     }
   }
 
-  this.setupProp.getMovesFrom = function(node) {
+  this.getMoveFrom = function(node) {
+    for (ident in movePropDict) {
+      var p = node.getProperty(ident);
+      if (p)
+        return new Move(p.x, p.y, movePropDict[ident]);
+    }
+  }
+
+  this.addMoveProperty = function(x, y, stone) {
+    var stoneIdent = val2ident(movePropDict, stone);
+    if (!stoneIdent)
+      return;
+
+    var node = this.tree.current;
+    for (var i = 0; i < node.children.length; i++) {
+      var p = node.getChildAt(i).getProperty(stoneIdent);
+      if (p && p.x == x && p.y == y) {
+        this.tree.forwardTo(i);
+        return;
+      }
+    }
+    this.tree.newChild();
+    this.tree.current.setProperty(stoneIdent, new IgoPoint(x, y));
+  }
+
+  this.getSetupMovesFrom = function(node) {
     var result = [];
-    for (var i = 0; i < this.length(); i++) {
-      var propVal = node.getProperty(this.identAt(i));
-      if (!propVal)
-        continue;
-      for (var j = 0; j < propVal.length; j++) {
-        var p = propVal[j];
-        result.push(new Move(p.x, p.y, this.stoneAt(i)));
+    for (ident in setupPropDict) {
+      var points = node.getProperty(ident);
+      if (points) {
+        for (var i = 0; i < points.length; i++) {
+          var p = points[i];
+          result.push(new Move(p.x, p.y, setupPropDict[ident]));
+        }
       }
     }
     return result;
   }
 
-  this.addMoveProperty = function(x, y, stone) {
-    var childIndex = this.moveProp.findChildIndexFrom(this.currentNode(), x, y, stone);
-
-    if (childIndex == null) {
-      var propIdent = this.moveProp.stone2ident(stone);
-      if (propIdent) {
-        this.tree.newChild();
-        this.currentNode().setProperty(propIdent, new IgoPoint(x, y));
-      }
-    } else {
-      this.tree.forwardTo(childIndex);
-    }
-  }
-
   this.addSetupProperty = function(x, y, stone) {
-    if (!this.setupProp.existsIn(this.currentNode()))
+     var stoneIdent = val2ident(setupPropIdent, stone);
+    if (!stoneIdent)
+      return;
+
+    if (!existsIn(setupPropDict, this.tree.current))
       this.tree.insertNewNode();
 
-    var propIdent = this.setupProp.stone2ident(stone);
-    if (propIdent) {
-      var node = this.currentNode();
-      this.setupProp.removeMatchedPointFrom(node, x, y);
-      var propValue = node.getProperty(propIdent);
-      if (propValue)
-        propValue.push(new IgoPoint(x, y));
-      else
-        node.setProperty(propIdent, [new IgoPoint(x, y)]);
-    }
+    var node = this.tree.current;
+    removeMatchedSetupPoint(node, x, y);
+    var points = node.getProperty(stoneIdent);
+    if (points)
+      points.push(new IgoPoint(x, y));
+    else
+      node.setProperty(stoneIdent, [new IgoPoint(x, y)]);
   }
 
   this.isStoneProp = function() {
-    var node = this.currentNode();
+    var node = this.tree.current();
     return (this.getMoveFrom(node) || this.getSetupMovesFrom(node)) ? true : false;
-  }
-
-  this.getMoveFrom = function(node) {
-    return this.moveProp.getMoveFrom(node);
-  }
-
-  this.getSetupMovesFrom = function(node) {
-    return this.setupProp.getMovesFrom(node);
-  }
-
-  this.currentNode = function() {
-    return this.tree.current;
   }
 
   this.isRootNode = function() {
@@ -982,7 +940,7 @@ var PropUtil = function(tree) {
   }
 
   this.getGameInfoPropNode = function() {
-    return this.tree.root.getChild();
+    return this.getRootPropNode();
   }
 
   this.isLeafNode = function() {
