@@ -906,7 +906,7 @@ var PropUtil = function(tree) {
   }
 
   this.addSetupProperty = function(x, y, stone) {
-     var stoneIdent = val2ident(setupPropIdent, stone);
+    var stoneIdent = val2ident(setupPropIdent, stone);
     if (!stoneIdent)
       return;
 
@@ -1054,10 +1054,10 @@ var IgoPlayer = function(igoTree) {
   }
 
   this.back = function() {
-    this.back_n(1);
+    this.backN(1);
   }
 
-  this.back_n = function(n) {
+  this.backN = function(n) {
     for (var i = 0; i < n; i++) {
       if (this.propUtil.isRootPropNode())
         break;
@@ -1067,10 +1067,10 @@ var IgoPlayer = function(igoTree) {
   }
 
   this.forward = function() {
-    this.forward_n(1);
+    this.forwardN(1);
   }
 
-  this.forward_n = function(n) {
+  this.forwardN = function(n) {
     for (var i = 0; i < n; i++) {
       if (!this.sgfTree.current.hasChild())
         break;
