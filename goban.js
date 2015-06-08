@@ -820,6 +820,10 @@ var Move = function(x, y, stone) {
   this.x = x;
   this.y = y;
   this.stone = stone;
+
+  this.isPass = function() {
+    return x < 0 || y < 0;
+  }
 }
 
 var PropUtil = function(tree) {
@@ -906,7 +910,7 @@ var PropUtil = function(tree) {
   }
 
   this.addSetupProperty = function(x, y, stone) {
-    var stoneIdent = val2ident(setupPropIdent, stone);
+    var stoneIdent = val2ident(setupPropDict, stone);
     if (!stoneIdent)
       return;
 
@@ -1123,12 +1127,12 @@ var IgoPlayer = function(igoTree) {
   }
 }
 
-var DrawerEnv = function(size, ctx) {
+var GoDrawerEnv = function(size, ctx) {
   this.size = size;
   this.ctx  = ctx;
 
   this.paddingTop    = 5;
-  this.paddingBottom = 5;
+  this.paddingBottom = 30;
   this.paddingLeft   = 10;
   this.paddingRight  = 10;
 
@@ -1199,7 +1203,7 @@ var DrawerEnv = function(size, ctx) {
 }
 
 var GoDrawer = function(size, ctx) {
-  this.env = new DrawerEnv(size, ctx);
+  this.env = new GoDrawerEnv(size, ctx);
   this.handlers = [];
 
   this.addDrawHandler = function(handler) {
@@ -1357,6 +1361,10 @@ var DefaultGoDrawerFactory = function() {
       ctx.fillText("Cnt: "   + player.rule.cnt, basex + 0, y);
       ctx.fillText("Black: " + player.rule.getBlackHama(), basex + 80, y);
       ctx.fillText("White: " + player.rule.getWhiteHama(), basex + 160, y);
+      
+      var move = player.propUtil.getMoveFrom(player.sgfTree.current);
+      if (move && move.isPass())
+        ctx.fillText((move.stone == StoneType.BLACK ? "Black" : "White") + " Pass", basex + 260, y);
     }
   }
 
@@ -1379,6 +1387,30 @@ var DefaultGoDrawerFactory = function() {
     }
   }
 
+  var NumberDrawer = function(option, player) {
+    this.draw = function(env) {
+      if (!option.shouldGet("stoneNumber", false))
+        return;
+      var propUtil = player.propUtil;
+      var nodes = player.sgfTree.toSequence();
+      var ctx = env.ctx;
+      ctx.font = Math.ceil(env.grid * 0.6) + "px Arial";
+      ctx.textAlign = "center";
+      var cnt = 0;
+      for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        var move = propUtil.getMoveFrom(node);
+        if (move) {
+          cnt += 1;
+          if (player.getStone(move.x, move.y)) {
+            ctx.fillStyle = move.stone == StoneType.BLACK ? "white" : "black";
+            ctx.fillText(cnt.toString(), env.toX(move.x), env.toY(move.y) + Math.ceil(env.hgrid * 0.5));
+          }
+        }
+      }
+    }
+  }
+
   function createImage(drawer, path) {
     var img = new Image();
     img.src = path;
@@ -1388,25 +1420,21 @@ var DefaultGoDrawerFactory = function() {
     return img;
   }
 
-  this.create = function(player, ctx, opt) {
+  this.create = function(player, ctx, option) {
     var drawer = new GoDrawer(player.size, ctx);
 
-    var option = {}
-    for (key in opt)
-      option[key] = opt[key];
-
-    option.blackStoneImg = createImage(drawer, opt.blackStoneImagePath);
-    option.whiteStoneImg = createImage(drawer, opt.whiteStoneImagePath);
-    option.boardImg = createImage(drawer, opt.boardImagePath);
+    option.blackStoneImg = createImage(drawer, option.blackStoneImagePath);
+    option.whiteStoneImg = createImage(drawer, option.whiteStoneImagePath);
+    option.boardImg      = createImage(drawer, option.boardImagePath);
 
     option.shouldGet = function(key, defaultVal) {
       var x = this[key];
-      if (x)
+      if (x !== undefined)
         return x;
-      else if(defaultVal)
+      else if(defaultVal !== undefined)
         return defaultVal;
 
-      return null;//should raise error
+      throw new Error("shouldGet failed: " + key);
     }
 
     drawer.addDrawHandler(new BackgroundDrawer(option));
@@ -1414,34 +1442,152 @@ var DefaultGoDrawerFactory = function() {
     drawer.addDrawHandler(new StoneDrawer(option, player));
     drawer.addDrawHandler(new HamaDrawer(option, player));
     drawer.addDrawHandler(new ChildrenDrawer(option, player));
+    drawer.addDrawHandler(new NumberDrawer(option, player));
 
     return drawer;
   }
 }
 
-var createDrawer = function(player, id, opt) {
-  var canvas = document.getElementById(id);
-  if (!canvas || !canvas.getContext)
+var TreeDrawer = function(player, ctx) {
+  function drawLine(x1, y1, x2, y2) {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  }
+
+  function drawCircle(x, y, r, fill) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI*2, false);
+    if (fill)
+      ctx.fill();
+    else
+      ctx.stroke();
+  }
+
+  function makeMatrix() {
+    var matrix = new Array();
+    makeMatrixHelper(matrix, player.sgfTree.root, 0, 0);
+    return matrix;
+  }
+
+  function makeMatrixHelper(matrix, node, x, y) {
+    if (!matrix[x])
+      matrix[x] = new Array();
+
+    matrix[x][y] = node;
+
+    var height = 0;
+    for (var j = 0; j < node.children.length; j++)
+      height += makeMatrixHelper(matrix, node.children[j], x + 1, y + height);
+
+    return node.children.length == 0 ? 1 : height;
+  }
+
+  function toX(i) {
+    return i * 20 + 50;
+  }
+
+  function toY(j) {
+    return j * 20 + 50;
+  }
+
+  this.draw = function() {
+    ctx.fillStyle = 'pink';
+    ctx.fillRect(0, 0, 600, 600);
+    var matrix = makeMatrix();
+
+    ctx.strokeStyle = 'black';
+    for (var i = 0; i < matrix.length; i++) {
+      for (var j = 0; j < matrix[i].length; j++) {
+        var node = matrix[i][j];
+        if (node && matrix[i+1]) {
+          for (var k = j; k < matrix[i+1].length && (matrix[i][k] === node || matrix[i][k] === undefined); k++) {
+            if (matrix[i+1][k]) {
+              drawLine(toX(i), toY(k), toX(i + 1), toY(k));
+              drawLine(toX(i), toY(j), toX(i), toY(k));
+            }
+          }
+        }
+      }
+    }
+
+    ctx.strokeStyle = 'red';
+    for (var i = 0; i < matrix.length; i++) {
+      for (var j = 0; j < matrix[i].length; j++) {
+        var node = matrix[i][j];
+        if (node) {
+          var move = player.propUtil.getMoveFrom(node);
+          switch (move && move.stone) {
+          case StoneType.BLACK:
+            ctx.fillStyle = 'black';
+            break;
+          case StoneType.WHITE:
+            ctx.fillStyle = 'white';
+            break;
+          default:
+            ctx.fillStyle = 'green';
+          }
+
+          var x = toX(i);
+          var y = toY(j);
+          var r = 8;
+
+          drawCircle(x, y, r, true);
+          if (node === player.sgfTree.current)
+            drawCircle(x, y, r, false);
+        }
+      }
+    }
+  }
+}
+
+var ClickType = {
+  MOVE: 1,
+  BLACK: 2,
+  WHITE: 3
+}
+
+var createDrawer = function(player, id1, id2, opt) {
+  var gobanCanvas = document.getElementById(id1);
+  if (!gobanCanvas || !gobanCanvas.getContext)
     return;
-  var ctx = canvas.getContext('2d');
+  var treeCanvas  = document.getElementById(id2);
+  if (!treeCanvas || !treeCanvas.getContext)
+    return;
 
   var factory = new DefaultGoDrawerFactory();
-  var drawer = factory.create(player, ctx, opt);
+  var drawer = factory.create(player, gobanCanvas.getContext('2d'), opt);
+  var treeDrawer = new TreeDrawer(player, treeCanvas.getContext('2d'));
   
   var env = drawer.env;
   var downPos = {};
 
-  canvas.addEventListener("click", function(e) {
+  gobanCanvas.addEventListener("click", function(e) {
     var p = env.mouseEventToIJ(e);
     var r = e.target.getBoundingClientRect();
     if (p.i    == downPos.p.i    &&
         p.j    == downPos.p.j    &&
         r.left == downPos.r.left &&
-        r.top  == downPos.r.top)
-      player.putStone(p.i, p.j);
+        r.top  == downPos.r.top) {
+      switch (opt.clickType) {
+      case ClickType.BLACK:
+        player.setStone(p.i, p.j, StoneType.BLACK);
+        break;
+      case ClickType.WHITE:
+        player.setStone(p.i, p.j, StoneType.WHITE);
+        break;
+      default:
+        player.putStone(p.i, p.j);
+      }
+    }
   });
 
-  canvas.addEventListener("mousedown", function(e) {
+  player.addListener(function() {
+    treeDrawer.draw();
+  });
+
+  gobanCanvas.addEventListener("mousedown", function(e) {
     downPos.p = env.mouseEventToIJ(e);
     downPos.r = e.target.getBoundingClientRect();
   });
