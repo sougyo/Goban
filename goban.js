@@ -624,9 +624,9 @@ var SgfNode = function(parentNode) {
 
   this.setProperties = function(props, overwrite) {
     for (key in props) {
-      if (overwrite || !this.getProperty(key)) {
+      if (overwrite || this.getProperty(key) === undefined) {
         var val = props[key];
-        if (val)
+        if (val !== undefined)
           this.setProperty(key, props[key]);
       }
     }
@@ -1306,12 +1306,12 @@ var DefaultGoDrawerFactory = function() {
       var offset = env.hgrid / 6;
       var shadowSize = env.hgrid * 0.9;
       var ctx = env.ctx;
-      ctx.fillStyle = 'black';
-      ctx.globalAlpha = 0.2;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
       for (var i = 0; i < size; i++)
         for (var j = 0; j < size; j++)
           if (StoneType.exists(player.getStone(i, j)))
             env.drawCircle(env.toX(i) - offset, env.toY(j) + offset, shadowSize, true);
+
     }
 
     this.drawCircle = function(env) {
@@ -1387,24 +1387,43 @@ var DefaultGoDrawerFactory = function() {
     }
   }
 
+
   var NumberDrawer = function(option, player) {
+    var size = player.size;
+    var numberTable = new Array(size);
+    for (var i = 0; i < size; i++)
+      numberTable[i] = new Array(size);
+
     this.draw = function(env) {
       if (!option.shouldGet("stoneNumber", false))
         return;
-      var propUtil = player.propUtil;
       var nodes = player.sgfTree.toSequence();
       var ctx = env.ctx;
-      ctx.font = Math.ceil(env.grid * 0.6) + "px Arial";
+      ctx.font = Math.floor(env.grid * 0.5) + "px Arial";
       ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
       var cnt = 0;
+
+      for (var i = 0; i < size; i++)
+        for (var j = 0; j < size; j++)
+          numberTable[i][j] = undefined;
+
       for (var i = 0; i < nodes.length; i++) {
         var node = nodes[i];
-        var move = propUtil.getMoveFrom(node);
+        var move = player.propUtil.getMoveFrom(node);
         if (move) {
           cnt += 1;
-          if (player.getStone(move.x, move.y)) {
-            ctx.fillStyle = move.stone == StoneType.BLACK ? "white" : "black";
-            ctx.fillText(cnt.toString(), env.toX(move.x), env.toY(move.y) + Math.ceil(env.hgrid * 0.5));
+          if (StoneType.exists(player.getStone(move.x, move.y)))
+            numberTable[move.x][move.y] = cnt;
+        }
+      }
+
+      for (var i = 0; i < size; i++) {
+        for (var j = 0; j < size; j++) {
+          var cnt = numberTable[i][j];
+          if (cnt !== undefined) {
+            ctx.fillStyle = player.getStone(i, j) == StoneType.BLACK ? "white" : "black";
+            ctx.fillText(cnt.toString(), env.toX(i), env.toY(j));
           }
         }
       }
@@ -1502,7 +1521,7 @@ var TreeDrawer = function(player, ctx) {
       for (var j = 0; j < matrix[i].length; j++) {
         var node = matrix[i][j];
         if (node && matrix[i+1]) {
-          for (var k = j; k < matrix[i+1].length && (matrix[i][k] === node || matrix[i][k] === undefined); k++) {
+          for (var k = j; k < matrix[i+1].length && (matrix[i][k] === node || !matrix[i][k]); k++) {
             if (matrix[i+1][k]) {
               drawLine(toX(i), toY(k), toX(i + 1), toY(k));
               drawLine(toX(i), toY(j), toX(i), toY(k));
