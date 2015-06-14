@@ -731,7 +731,7 @@ var SgfTree = function() {
       var node = new SgfNode(cur);
       node.addChild(cur.getChild());
       cur.setChild(node);
-      cur.getChild().parentNode = node;
+      node.getChild().parentNode = node;
       this.current = this.current.getChild();
     } else {
       this.newChild();
@@ -910,9 +910,12 @@ var PropUtil = function(tree) {
   }
 
   this.addSetupProperty = function(x, y, stone) {
+    if (this.tree.current.hasChild())
+      return false;
+
     var stoneIdent = val2ident(setupPropDict, stone);
     if (!stoneIdent)
-      return;
+      return false;
 
     if (!existsIn(setupPropDict, this.tree.current))
       this.tree.insertNewNode();
@@ -924,6 +927,8 @@ var PropUtil = function(tree) {
       points.push(new IgoPoint(x, y));
     else
       node.setProperty(stoneIdent, [new IgoPoint(x, y)]);
+
+    return true;
   }
 
   this.isStoneProp = function() {
@@ -1026,14 +1031,19 @@ var IgoPlayer = function(igoTree) {
   }
 
   this.setStone = function(x, y, stone) {
-    if (this.rule.setStone(x, y, stone)) {
-      this.propUtil.addSetupProperty(x, y, stone);
+    if (this.getStone(x, y) != stone && this.propUtil.addSetupProperty(x, y, stone)) {
+      this.rule.setStone(x, y, stone)
       this.notify();
     }
   }
 
   this.getStone = function(x, y) {
     return this.rule.board.get(x, y);
+  }
+
+  this.changeStone = function() {
+    this.rule.setNextStone(StoneType.reverse(this.rule.nextStone));
+    this.notify();
   }
 
   this.updateGoban = function() {
@@ -1564,7 +1574,8 @@ var TreeDrawer = function(player, ctx) {
 var ClickType = {
   MOVE: 1,
   BLACK: 2,
-  WHITE: 3
+  WHITE: 3,
+  ERASE: 4
 }
 
 var createDrawer = function(player, id1, id2, opt) {
@@ -1595,6 +1606,9 @@ var createDrawer = function(player, id1, id2, opt) {
         break;
       case ClickType.WHITE:
         player.setStone(p.i, p.j, StoneType.WHITE);
+        break;
+      case ClickType.ERASE:
+        player.setStone(p.i, p.j, StoneType.NONE);
         break;
       default:
         player.putStone(p.i, p.j);
