@@ -117,132 +117,174 @@ var ScanTable = function(size) {
 }
 
 var Scanner = function(size) {
-  this.size = size;
-  this.scanTable = new ScanTable(size);
-  this.scan = function(x, y, board, scanableStone, abortStone) {
-    if (board.size != this.size)
+  var scanTable = new ScanTable(size);
+  var board = null;
+  var scanableStone = null;
+  var abortStone = null;
+
+  this.scan = function(x, y, _board, _scanableStone, _abortStone) {
+    if (_board.size != size)
       return;
     
-    this.scanTable.clear();
-    this.board = board;
-    this.scanableStone = scanableStone;
-    this.abortStone = abortStone;
-    this.scanRecursively(x, y);
-    return this.scanTable;
+    board         = _board;
+    scanableStone = _scanableStone;
+    abortStone    = _abortStone;
+
+    scanTable.clear();
+    scanRecursively(x, y);
+    return scanTable;
   }
 
-  this.scanRecursively = function(x, y) {
-    if (this.board.isOutOfRange(x, y))
+  function scanRecursively(x, y) {
+    if (board.isOutOfRange(x, y))
       return;
-    if (this.scanTable.isMarked(x, y))
+    if (scanTable.isMarked(x, y))
       return;
-    if (this.board.get(x, y) == this.abortStone)
-      this.scanTable.disableScan();
-    if (this.board.get(x, y) != this.scanableStone)
+    if (board.get(x, y) == abortStone)
+      scanTable.disableScan();
+    if (board.get(x, y) != scanableStone)
       return;
-    this.scanTable.mark(x, y);
+    scanTable.mark(x, y);
 
-    this.scanRecursively(x + 1, y);
-    this.scanRecursively(x - 1, y);
-    this.scanRecursively(x, y - 1);
-    this.scanRecursively(x, y + 1);
+    scanRecursively(x + 1, y);
+    scanRecursively(x - 1, y);
+    scanRecursively(x, y - 1);
+    scanRecursively(x, y + 1);
   }
 }
 
 var IgoRuleEngine = function(size) {
-  this.size = size;
-  this.scanner = new Scanner(size);
-  this.removeTable = new ScanTable(size);
-  this.board = new Board(size);
-  this.tmpBoard = new Board(size);
+  var scanner = new Scanner(size);
+  var removeTable = new ScanTable(size);
+  var tmpBoard = new Board(size);
 
-  this.resetKo = function() {
-    this.koX = null;
-    this.koY = null;
-  }
+  var board = new Board(size);
+  var nextStone;
+  var koX;
+  var koY;
+  var cnt;
+  var hama = {};
 
   this.clear = function() {
-    this.nextStone = StoneType.BLACK;
-    this.cnt = 0;
-    this.hama = {}
-    this.hama[StoneType.BLACK] = 0;
-    this.hama[StoneType.WHITE] = 0;
-    this.resetKo();
-    this.board.clear();
+    board.clear();
+    nextStone = StoneType.BLACK;
+    resetKo();
+    cnt = 0;
+    hama[StoneType.BLACK] = 0;
+    hama[StoneType.WHITE] = 0;
   }
   this.clear();
 
+  function resetKo() {
+    koX = null;
+    koY = null;
+  }
+
+  function updateKo() {
+    resetKo();
+    if (removeTable.count() != 1)
+      return;
+    for (var x = 0; x < size; x++)
+      for (var y = 0; y < size; y++)
+        if (removeTable.isMarked(x, y)) {
+          koX = x;
+          koY = y;
+          return;
+        }
+  }
+
   this.pass = function() {
-    this.nextStone = StoneType.reverse(this.nextStone);
-    this.cnt += 1;
-    this.resetKo();
+    nextStone = StoneType.reverse(nextStone);
+    cnt += 1;
+    resetKo();
+  }
+
+  this.getNextStone = function() {
+    return nextStone;
   }
 
   this.setNextStone = function(stone) {
-    if (StoneType.exists(stone) && stone != this.nextStone) {
-      this.resetKo();
-      this.nextStone = stone;
+    if (StoneType.exists(stone) && stone != nextStone) {
+      resetKo();
+      nextStone = stone;
     }
   }
 
-  this.setStone = function(x, y, stone) {
-    if (this.board.isOutOfRange(x, y))
+  this.getStone = function(x, y) {
+    if (board.isOutOfRange(x, y))
       return;
-    this.board.set(x, y, stone);
-    this.resetKo();
+    return board.get(x, y);
+  }
+
+  this.setStone = function(x, y, stone) {
+    if (board.isOutOfRange(x, y))
+      return;
+    board.set(x, y, stone);
+    resetKo();
     return true;
   }
 
   this.putStone = function(x, y) {
-    var stone = this.nextStone;
+    var stone = nextStone;
     var revStone = StoneType.reverse(stone);
 
-    if (this.board.isOutOfRange(x, y))
+    if (board.isOutOfRange(x, y))
       return;
-    if (this.board.get(x, y) != StoneType.NONE)
-      return;
-
-    this.tmpBoard.copyFrom(this.board);
-    this.tmpBoard.set(x, y, stone);
-
-    this.removeTable.clear();
-    this.mergeRemoveTable(x - 1, y, revStone);
-    this.mergeRemoveTable(x + 1, y, revStone);
-    this.mergeRemoveTable(x, y - 1, revStone);
-    this.mergeRemoveTable(x, y + 1, revStone);
-
-    if (x == this.koX && y == this.koY && this.removeTable.count() == 1)
-      return;
-    this.removeStones(this.removeTable);
-
-    if (this.scanner.scan(x, y, this.tmpBoard, stone, StoneType.NONE).isEnabled())
+    if (board.get(x, y) != StoneType.NONE)
       return;
 
-    this.board.copyFrom(this.tmpBoard);
-    this.updateKo();
-    this.hama[stone] += this.removeTable.count();
-    this.nextStone = revStone;
-    this.cnt += 1;
+    tmpBoard.copyFrom(board);
+    tmpBoard.set(x, y, stone);
+
+    removeTable.clear();
+    mergeRemoveTable(x - 1, y, revStone);
+    mergeRemoveTable(x + 1, y, revStone);
+    mergeRemoveTable(x, y - 1, revStone);
+    mergeRemoveTable(x, y + 1, revStone);
+
+    if (x == koX && y == koY && removeTable.count() == 1)
+      return;
+    removeStones(removeTable);
+
+    if (scanner.scan(x, y, tmpBoard, stone, StoneType.NONE).isEnabled())
+      return;
+
+    board.copyFrom(tmpBoard);
+    updateKo();
+    hama[stone] += removeTable.count();
+    nextStone = revStone;
+    cnt += 1;
     return true;
   }
 
-  this.mergeRemoveTable = function(x, y, stone) {
-    this.removeTable.merge(this.scanner.scan(x, y, this.tmpBoard, stone, StoneType.NONE)); 
+  function removeStones(scannedTable) {
+    var sum = 0;
+    for (var x = 0; x < size; x++)
+      for (var y = 0; y < size; y++)
+        if (scannedTable.isMarked(x, y)) {
+          if (tmpBoard.get(x, y) != StoneType.NONE)
+            sum++;
+          tmpBoard.set(x, y, StoneType.NONE);
+        }
   }
 
-  this.getTerritory = function(stone) {
-    var revStone = StoneType.reverse(stone);
-    var result = new ScanTable(this.size);
+  function mergeRemoveTable(x, y, stone) {
+    removeTable.merge(scanner.scan(x, y, tmpBoard, stone, StoneType.NONE)); 
+  }
 
-    if (this.board.count(StoneType.BLACK) == 0 &&
-        this.board.count(StoneType.WHITE) == 0)
+  function getTerritory(stone) {
+    var revStone = StoneType.reverse(stone);
+    var result = new ScanTable(size);
+
+    if (board.count(StoneType.BLACK) == 0 &&
+        board.count(StoneType.WHITE) == 0)
       return result;
 
-    for (var x = 0; x < this.size; x++) {
-      for (var y = 0; y < this.size; y++) {
+    for (var x = 0; x < size; x++) {
+      for (var y = 0; y < size; y++) {
         if (result.isMarked(x, y))
           continue;
-        var tmp = this.scanner.scan(x, y, this.board, StoneType.NONE, revStone);
+        var tmp = scanner.scan(x, y, board, StoneType.NONE, revStone);
         if (tmp.isEnabled())
           result.merge(tmp);
       }
@@ -251,39 +293,19 @@ var IgoRuleEngine = function(size) {
   }
 
   this.getScore = function(stone) {
-    return this.getTerritory(stone).count() + this.hama[stone];
-  }
-
-  this.removeStones = function(scannedTable) {
-    var sum = 0;
-    for (var x = 0; x < this.size; x++)
-      for (var y = 0; y < this.size; y++)
-        if (scannedTable.isMarked(x, y)) {
-          if (this.tmpBoard.get(x, y) != StoneType.NONE)
-            sum++;
-          this.tmpBoard.set(x, y, StoneType.NONE);
-        }
-  }
- 
-  this.updateKo = function() {
-    this.resetKo();
-    if (this.removeTable.count() != 1)
-      return;
-    for (var x = 0; x < this.size; x++)
-      for (var y = 0; y < this.size; y++)
-        if (this.removeTable.isMarked(x, y)) {
-          this.koX = x;
-          this.koY = y;
-          return;
-        }
+    return getTerritory(stone).count() + hama[stone];
   }
 
   this.getBlackHama = function() {
-    return this.hama[StoneType.BLACK];
+    return hama[StoneType.BLACK];
   }
 
   this.getWhiteHama = function() {
-    return this.hama[StoneType.WHITE];
+    return hama[StoneType.WHITE];
+  }
+
+  this.getCount = function() {
+    return cnt;
   }
 }
 
@@ -314,7 +336,7 @@ var IgoPoint = function(x, y) {
 }
 
 var SgfPropParser = function() {
-  var parseIgoPointX = function(c) {
+  function parseIgoPointX(c) {
     if (c.match(/^[a-z]$/))
       return c.charCodeAt() - "a".charCodeAt();
 
@@ -1023,7 +1045,7 @@ var IgoPlayer = function(igoTree) {
   this.listeners = [];
 
   this.putStone = function(x, y) {
-    var stone = this.rule.nextStone;
+    var stone = this.rule.getNextStone();
     if (this.rule.putStone(x, y)) {
       this.propUtil.addMoveProperty(x, y, stone);
       this.notify();
@@ -1038,11 +1060,11 @@ var IgoPlayer = function(igoTree) {
   }
 
   this.getStone = function(x, y) {
-    return this.rule.board.get(x, y);
+    return this.rule.getStone(x, y);
   }
 
   this.changeStone = function() {
-    this.rule.setNextStone(StoneType.reverse(this.rule.nextStone));
+    this.rule.setNextStone(StoneType.reverse(this.rule.getNextStone()));
     this.notify();
   }
 
@@ -1115,7 +1137,7 @@ var IgoPlayer = function(igoTree) {
   }
 
   this.pass = function() {
-    var stone = this.rule.nextStone;
+    var stone = this.rule.getNextStone();
     this.rule.pass();
     this.propUtil.addMoveProperty(-1, -1, stone);
     this.notify();
@@ -1368,7 +1390,7 @@ var DefaultGoDrawerFactory = function() {
       var basex = env.xOffset + 5;
       ctx.fillStyle = "black";
       ctx.font = "14pt Arial";
-      ctx.fillText("Cnt: "   + player.rule.cnt, basex + 0, y);
+      ctx.fillText("Cnt: "   + player.rule.getCount(), basex + 0, y);
       ctx.fillText("Black: " + player.rule.getBlackHama(), basex + 80, y);
       ctx.fillText("White: " + player.rule.getWhiteHama(), basex + 160, y);
       
@@ -1387,7 +1409,7 @@ var DefaultGoDrawerFactory = function() {
         return;
       var pointSize = env.hgrid / 2;
       env.ctx.fillStyle = branchPointColor;
-      var stone = player.rule.nextStone;
+      var stone = player.rule.getNextStone();
       for (var i = 0; i < nodes.length; i++) {
         var node = nodes[i];
         var move = player.propUtil.getMoveFrom(node);
