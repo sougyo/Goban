@@ -1664,6 +1664,14 @@ var TreeDrawer = function(player, treeCanvas, ctx) {
       ctx.fillStyle   = a[0];
       drawCircle(a[1], a[2], a[3], a[4]);
     }
+
+    ctx.font = "10px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = 'black';
+    for (var i = 1; i < this.matrix.length; i += 5) {
+      ctx.fillText(i, toX(i), toY(-1));
+    }
     ctx.restore();
   }
 
