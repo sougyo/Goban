@@ -1157,6 +1157,42 @@ var IgoPlayer = function(igoTree) {
     player.updateGoban();
     return player;
   }
+
+  function existsNode(root, node) {
+    if (root === node)
+      return true;
+
+    for (var i = 0; i < root.children.length; i++) {
+      var r = existsNode(root.children[i], node);
+      if (r)
+        return r;
+    }
+    return false;
+  }
+
+  this.setCurrent = function(node) {
+    if (!existsNode(this.propUtil.getRootPropNode(), node))
+      return;
+
+    this.sgfTree.current = node;
+
+    var p = node.parentNode;
+    while (p !== this.sgfTree.root && p !== this.propUtil.getRootPropNode()) {
+      var t = null;
+      for (var i = 0; i < p.children.length; i++) {
+        if (p.children[i] === node) {
+          p.setChildIndex(i);
+          node = p;
+          p = p.parentNode;
+          t = true;
+          break;
+        }
+      }
+      if (!t)
+        throw new Error("internal error");
+    }
+    this.updateGoban();
+  }
 }
 
 var GoDrawerEnv = function(size, ctx) {
@@ -1499,7 +1535,16 @@ var DefaultGoDrawerFactory = function() {
   }
 }
 
-var TreeDrawer = function(player, ctx) {
+var TreeDrawer = function(player, treeCanvas, ctx) {
+  var transX = 0;
+  var transY = 0;
+  var saveX  = null;
+  var saveY  = null;
+  this.matrix = null;
+  this.currentX = null;
+  this.currentY = null;
+  this.r = 8;
+
   function drawLine(x1, y1, x2, y2) {
     ctx.beginPath();
     ctx.moveTo(x1, y1);
@@ -1543,54 +1588,135 @@ var TreeDrawer = function(player, ctx) {
     return j * 20 + 50;
   }
 
-  this.draw = function() {
-    ctx.fillStyle = 'pink';
-    ctx.fillRect(0, 0, 600, 600);
-    var matrix = makeMatrix();
+  function toI(x) {
+    return Math.round((x - transX - 50) / 20);
+  }
 
-    ctx.strokeStyle = 'black';
+  function toJ(y) {
+    return Math.round((y - transY - 50) / 20);
+  }
+
+  this.resetPosition = function() {
+    if (saveX == null && saveY == null && this.currentX && this.currentY) {
+      transX = -this.currentX + 100;
+      transY = -this.currentY + 100;
+    }
+  }
+
+  this.draw = function(dontReset = false) {
+    ctx.fillStyle = 'wheat';
+    ctx.fillRect(0, 0, 600, 600);
+
+    this.matrix = makeMatrix();
+    var matrix = this.matrix;
+
+    var lines = [];
+    var circles = [];
+    
     for (var i = 0; i < matrix.length; i++) {
       for (var j = 0; j < matrix[i].length; j++) {
         var node = matrix[i][j];
         if (node && matrix[i+1]) {
           for (var k = j; k < matrix[i+1].length && (matrix[i][k] === node || !matrix[i][k]); k++) {
             if (matrix[i+1][k]) {
-              drawLine(toX(i), toY(k), toX(i + 1), toY(k));
-              drawLine(toX(i), toY(j), toX(i), toY(k));
+              lines.push([toX(i), toY(k), toX(i + 1), toY(k)]);
+              lines.push([toX(i), toY(j), toX(i), toY(k)]);
             }
           }
         }
       }
     }
 
-    ctx.strokeStyle = 'red';
     for (var i = 0; i < matrix.length; i++) {
       for (var j = 0; j < matrix[i].length; j++) {
         var node = matrix[i][j];
         if (node) {
           var move = player.propUtil.getMoveFrom(node);
-          switch (move && move.stone) {
-          case StoneType.BLACK:
-            ctx.fillStyle = 'black';
-            break;
-          case StoneType.WHITE:
-            ctx.fillStyle = 'white';
-            break;
-          default:
-            ctx.fillStyle = 'green';
-          }
+          var color = 'green';
+          if (move)
+            color = (move.stone == StoneType.BLACK) ? 'black' : 'white';
 
           var x = toX(i);
           var y = toY(j);
-          var r = 8;
 
-          drawCircle(x, y, r, true);
-          if (node === player.sgfTree.current)
-            drawCircle(x, y, r, false);
+          circles.push([color, x, y, this.r, true]);
+          if (node === player.sgfTree.current) {
+            circles.push(['red', x, y, this.r, false]);
+            this.currentX = x;
+            this.currentY = y;
+          }
         }
       }
     }
+    if (!dontReset)
+      this.resetPosition();
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, transX, transY);
+    ctx.strokeStyle = 'black';
+    for (var i = 0; i < lines.length; i++) {
+      var a = lines[i];
+      drawLine(a[0], a[1], a[2], a[3]);
+    }
+
+    for  (var i = 0; i < circles.length; i++) {
+      var a = circles[i];
+      ctx.strokeStyle = a[0];
+      ctx.fillStyle   = a[0];
+      drawCircle(a[1], a[2], a[3], a[4]);
+    }
+    ctx.restore();
   }
+
+  treeCanvas.addEventListener("mousedown", function(e) {
+    var rect = e.target.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    var y = e.clientY - rect.top;
+    saveX = x;
+    saveY = y;
+  });
+
+  var varThis = this;
+  treeCanvas.addEventListener("mousemove", function(e) {
+    var rect = e.target.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    var y = e.clientY - rect.top;
+    if (saveX !== null && saveY !== null) {
+      transX += x - saveX;
+      transY += y - saveY;
+      saveX = x;
+      saveY = y;
+    }
+    varThis.draw(true);
+  });
+
+  treeCanvas.addEventListener("mouseup", function(e) {
+    saveX = null;
+    saveY = null;
+    
+    var rect = e.target.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    var y = e.clientY - rect.top;
+
+    var i = toI(x);
+    var j = toJ(y);
+    var node = null;
+    if (varThis.matrix[i])
+      node = varThis.matrix[i][j];
+    if (node) {
+      player.setCurrent(node);
+    }
+
+    varThis.draw(true);
+  });
+
+  treeCanvas.addEventListener("mouseout", function(e) {
+    saveX = null;
+    saveY = null;
+    varThis.draw(true);
+  });
+
+  this.draw();
+  this.resetPosition();
 }
 
 var ClickType = {
@@ -1610,7 +1736,7 @@ var createDrawer = function(player, id1, id2, opt) {
 
   var factory = new DefaultGoDrawerFactory();
   var drawer = factory.create(player, gobanCanvas.getContext('2d'), opt);
-  var treeDrawer = new TreeDrawer(player, treeCanvas.getContext('2d'));
+  var treeDrawer = new TreeDrawer(player, treeCanvas, treeCanvas.getContext('2d'));
   
   var env = drawer.env;
   var downPos = {};
@@ -1639,6 +1765,7 @@ var createDrawer = function(player, id1, id2, opt) {
   });
 
   player.addListener(function() {
+    treeDrawer.resetPosition();
     treeDrawer.draw();
   });
 
