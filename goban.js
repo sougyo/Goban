@@ -542,10 +542,12 @@ var SgfReader = function() {
   function consumeToken(type) {
     var token = nextToken();
     if (token.type != type)
-      throw new Error("Parse Error: Expected:" + type + " Actual:" + token.type + " at:" + this.pos);
+      throw new Error("Parse Error: Expected:" + type + " Actual:" + token.type + " at:" + pos);
   }
 
   function cacheToken(token) {
+    if (cache)
+      throw new Error("Parse Error: unexpected cache");
     cache = token;
   }
 
@@ -607,29 +609,7 @@ var SgfReader = function() {
   }
 
   function parseError() {
-    throw new Error("Parse Error at:" + this.pos + " rest: '" + this.rest.substr(0, 10) + "'");
-  }
-}
-
-var SgfWriter = function() {
-  var result;
-  this.writeSgf = function(tree) {
-    result = "";
-    writeHelepr(tree.root, true);
-    return result;
-  }
-
-  function writeHelepr(node, force) {
-    var children = node.children;
-    var flag = force || (children.length == 1 ? false : true);
-
-    for (var i = 0; i < children.length; i++) {
-      if (flag) result += "(";
-      var child = children[i];
-      result += child;
-      writeHelepr(child, false);
-      if (flag) result += ")";
-    }
+    throw new Error("Parse Error at:" + pos + " rest: '" + rest.substr(0, 10) + "'");
   }
 }
 
@@ -823,18 +803,36 @@ var SgfTree = function() {
 
   this.resetIndexes = function() {
     this.current = this.root;
-    this.resetIndexesHelper(this.root);
+    resetIndexesHelper(this.root);
   }
 
-  this.resetIndexesHelper = function(node) {
+  function resetIndexesHelper(node) {
     node.setChildIndex(0);
     var children = node.children;
     for (var i = 0; i < children.length; i++) {
       var child = children[i];
       if (child.parentNode != node)
         throw new Error("detect invalid link");
-      this.resetIndexesHelper(child);
+      resetIndexesHelper(child);
     }
+  }
+
+  this.toSgf = function() {
+    result = "";
+    var writeHelepr = function(node, force) {
+      var children = node.children;
+      var flag = force || (children.length == 1 ? false : true);
+
+      for (var i = 0; i < children.length; i++) {
+        if (flag) result += "(";
+        var child = children[i];
+        result += child;
+        writeHelepr(child, false);
+        if (flag) result += ")";
+      }
+    }
+    writeHelepr(this.root, true);
+    return result;
   }
 }
 
@@ -1422,17 +1420,26 @@ var DefaultGoDrawerFactory = function() {
       if (env.paddingBottom < 20)
         return;
       var ctx = env.ctx;
-      var y = env.paddingTop + env.boardAreaHeight + 25;
+      var y = env.paddingTop + env.boardAreaHeight + 15;
       var basex = env.xOffset + 5;
       ctx.fillStyle = "black";
       ctx.font = "14pt Arial";
-      ctx.fillText("Cnt: "   + player.rule.getCount(), basex + 0, y);
-      ctx.fillText("Black: " + player.rule.getBlackHama(), basex + 80, y);
-      ctx.fillText("White: " + player.rule.getWhiteHama(), basex + 160, y);
-      
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(player.rule.getBlackHama(), basex + 60, y);
+      ctx.fillText(player.rule.getWhiteHama(), basex + 140, y);
+
+      ctx.strokeStyle = "black";
+      ctx.fillStyle = "black";
+      env.drawCircle(basex + 40, y, 10, true);
+      ctx.fillStyle = "white";
+      env.drawCircle(basex + 120, y, 10, true);
+      env.drawCircle(basex + 120, y, 10, false);
+
+      ctx.fillStyle = "black";
       var move = player.propUtil.getMoveFrom(player.sgfTree.current);
       if (move && move.isPass())
-        ctx.fillText((move.stone == StoneType.BLACK ? "Black" : "White") + " Pass", basex + 260, y);
+        ctx.fillText((move.stone == StoneType.BLACK ? "Black" : "White") + " Pass", basex + 180, y);
     }
   }
 
@@ -1617,10 +1624,14 @@ var TreeDrawer = function(player, treeCanvas, ctx) {
       for (var j = 0; j < matrix[i].length; j++) {
         var node = matrix[i][j];
         if (node && matrix[i+1]) {
+          var prevK = j;
           for (var k = j; k < matrix[i+1].length && (matrix[i][k] === node || !matrix[i][k]); k++) {
             if (matrix[i+1][k]) {
               lines.push([toX(i), toY(k), toX(i + 1), toY(k)]);
-              lines.push([toX(i), toY(j), toX(i), toY(k)]);
+              if (prevK != k) {
+                lines.push([toX(i), toY(prevK), toX(i), toY(k)]);
+                prevK = k;
+              }
             }
           }
         }
@@ -1791,14 +1802,13 @@ var createDrawer = function(player, id1, id2, opt) {
 
 if (typeof(module) != "undefined") {
   module.exports = {
-   SgfTree:   SgfTree,
    Move:      Move,
    StoneType: StoneType,
    SgfNode:   SgfNode,
+   SgfTree:   SgfTree,
    IgoPlayer: IgoPlayer,
    IgoPoint:  IgoPoint,
    SgfReader: SgfReader,
-   SgfWriter: SgfWriter,
   }
 }
 
