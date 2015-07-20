@@ -1686,19 +1686,15 @@ var TreeDrawer = function(player, treeCanvas, ctx) {
     ctx.restore();
   }
 
-  treeCanvas.addEventListener("mousedown", function(e) {
-    var rect = e.target.getBoundingClientRect();
-    var x = e.clientX - rect.left;
-    var y = e.clientY - rect.top;
-    saveX = x;
-    saveY = y;
-  });
-
   var varThis = this;
-  treeCanvas.addEventListener("mousemove", function(e) {
-    var rect = e.target.getBoundingClientRect();
-    var x = e.clientX - rect.left;
-    var y = e.clientY - rect.top;
+  function handleDownEvent(p) {
+    saveX = p.x;
+    saveY = p.y;
+  }
+
+  function handleMoveEvent(p) {
+    var x = p.x;
+    var y = p.y;
     if (saveX !== null && saveY !== null) {
       transX += x - saveX;
       transY += y - saveY;
@@ -1706,15 +1702,14 @@ var TreeDrawer = function(player, treeCanvas, ctx) {
       saveY = y;
     }
     varThis.draw(true);
-  });
+  }
 
-  treeCanvas.addEventListener("mouseup", function(e) {
+  function handleUpEvent(p) {
     saveX = null;
     saveY = null;
     
-    var rect = e.target.getBoundingClientRect();
-    var x = e.clientX - rect.left;
-    var y = e.clientY - rect.top;
+    var x = p.x;
+    var y = p.y;
 
     var i = toI(x);
     var j = toJ(y);
@@ -1726,12 +1721,58 @@ var TreeDrawer = function(player, treeCanvas, ctx) {
     }
 
     varThis.draw(true);
-  });
+  }
+
+  function windowToCanvas(x, y) {
+    var bbox = treeCanvas.getBoundingClientRect();
+    return { x: (x - bbox.left) * (treeCanvas.width / bbox.width),
+             y: (y - bbox.top)  * (treeCanvas.height / bbox.height)
+           }
+  }
 
   treeCanvas.addEventListener("mouseout", function(e) {
     saveX = null;
     saveY = null;
     varThis.draw(true);
+  });
+
+  treeCanvas.addEventListener("touchstart", function(e) {
+    e.preventDefault(e);
+    if (e.changedTouches.length == 1) {
+      var t = e.changedTouches[0];
+      handleDownEvent(windowToCanvas(t.clientX, t.clientY));
+    }
+  });
+
+  treeCanvas.addEventListener("touchmove", function(e) {
+    e.preventDefault(e);
+    if (e.changedTouches.length == 1) {
+      var t = e.changedTouches[0];
+      handleMoveEvent(windowToCanvas(t.clientX, t.clientY));
+    }
+  });
+
+  treeCanvas.addEventListener("touchend", function(e) {
+    e.preventDefault(e);
+    if (e.changedTouches.length == 1) {
+      var t = e.changedTouches[0];
+      handleUpEvent(windowToCanvas(t.clientX, t.clientY));
+    }
+  });
+
+  treeCanvas.addEventListener("mousedown", function(e) {
+    e.preventDefault(e);
+    handleDownEvent(windowToCanvas(e.clientX, e.clientY));
+  });
+
+  treeCanvas.addEventListener("mousemove", function(e) {
+    e.preventDefault(e);
+    handleMoveEvent(windowToCanvas(e.clientX, e.clientY));
+  });
+
+  treeCanvas.addEventListener("mouseup", function(e) {
+    e.preventDefault(e);
+    handleUpEvent(windowToCanvas(e.clientX, e.clientY));
   });
 
   this.draw();
@@ -1761,6 +1802,7 @@ var createDrawer = function(player, id1, id2, opt) {
   var downPos = {};
 
   gobanCanvas.addEventListener("click", function(e) {
+    e.preventDefault(e);
     var p = env.mouseEventToIJ(e);
     var r = e.target.getBoundingClientRect();
     if (p.i    == downPos.p.i    &&
@@ -1789,6 +1831,7 @@ var createDrawer = function(player, id1, id2, opt) {
   });
 
   gobanCanvas.addEventListener("mousedown", function(e) {
+    e.preventDefault(e);
     downPos.p = env.mouseEventToIJ(e);
     downPos.r = e.target.getBoundingClientRect();
   });
